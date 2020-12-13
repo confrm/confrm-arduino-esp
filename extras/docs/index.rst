@@ -13,8 +13,6 @@ Class Documentation
    :protected-members:
    :private-members:
    :undoc-members:
-   :outline:
-   :no-link:
 
 ----
 
