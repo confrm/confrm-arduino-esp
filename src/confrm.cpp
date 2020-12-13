@@ -110,6 +110,9 @@ bool Confrm::do_update() {
     return false;
   }
 
+  // Stop any additional updates happening while processing this one
+  timer_stop();
+
   HTTPClient http;
   String request = m_confrm_url + "/get_blob/?name=" +
                    m_package_name + "&blob=" + m_next_blob;
@@ -120,7 +123,7 @@ bool Confrm::do_update() {
 
     int len = http.getSize();
 
-    // There is data incomming, start the OTA programming prcess
+    // There is data incoming, start the OTA programming process
     esp_err_t err;
     esp_ota_handle_t ota_handle;
     const esp_partition_t *current = esp_ota_get_running_partition();
@@ -130,6 +133,7 @@ bool Confrm::do_update() {
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Error initalizing OTA process");
       http.end();
+      timer_start();
       return false;
     }
     
@@ -151,6 +155,7 @@ bool Confrm::do_update() {
           ESP_LOGE(TAG, "Error initializing OTA process");
           esp_ota_end(ota_handle);
           http.end();
+          timer_start();
           return false;
         }
         if(len > 0) {
@@ -175,6 +180,8 @@ bool Confrm::do_update() {
     http.end();
     ESP.restart();
   }
+  
+  timer_start();
   http.end();
 }
 
@@ -272,6 +279,18 @@ bool Confrm::save_config(config_s config) {
   return true;
 }
 
+void Confrm::timer_start() {
+  if (m_update_period > 2) {
+    esp_timer_start_periodic(m_timer, m_update_period * 1000 * 1000ULL);
+  }
+}
+
+void Confrm::timer_stop() {
+  if (m_update_period > 2) {
+    esp_timer_stop(m_timer);
+  }
+}
+
 void Confrm::timer_callback(void *ptr) {
   Confrm *self = reinterpret_cast<Confrm*>(ptr);
   if (self->check_for_updates()) {
@@ -300,14 +319,14 @@ Confrm::Confrm(
     do_update();
   }
 
-  if (update_period > 2) {
+  m_update_period = update_period;
+  if (m_update_period > 2) {
     esp_timer_create_args_t timer_config;
     timer_config.arg = reinterpret_cast<void*>(this);
     timer_config.callback = Confrm::timer_callback;
     timer_config.dispatch_method = ESP_TIMER_TASK;
     timer_config.name = "Confrm update timer";
     esp_timer_create(&timer_config, &m_timer);
-    esp_timer_start_periodic(m_timer, update_period * 1000 * 1000ULL);
   }
 }
 
