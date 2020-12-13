@@ -10,6 +10,11 @@ Class Documentation
 .. doxygenclass:: Confrm
    :project: Confrm
    :members:
+   :protected-members:
+   :private-members:
+   :undoc-members:
+   :outline:
+   :no-link:
 
 ----
 
