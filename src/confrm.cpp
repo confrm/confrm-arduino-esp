@@ -1,4 +1,5 @@
 #include <cstring>
+#include <sys/time.h>
 
 #include <HTTPClient.h>
 #include <WiFiClient.h>
@@ -17,15 +18,31 @@
 #include "FS.h"
 #include "SPIFFS.h"
 
-#ifndef CONFRM_SERIAL
-#define CONFRM_SERIAL Serial
-#endif
+#define SHORT_REST_RESPONSE_LENGTH 256
 
 
+int64_t get_json_int(String key, String str) {
+  int64_t retval;
+  struct json_value_s *root = json_parse(str.c_str(), str.length());
+  struct json_object_s* object = (struct json_object_s*)root->payload;
+  struct json_object_element_s* element = object->start;
+  do {
+    struct json_string_s* element_name = element->name;
+    if (0==strcmp(element_name->string,key.c_str())) {
+      struct json_value_s* element_value = element->value;
+      struct json_number_s* number = (struct json_number_s*)element_value->payload;
+      retval = atoll(number->number);
+      break;
+    }
+    element = element->next;
+  } while(element != NULL);
+  free(root);
+  return retval;
+}
 
-String get_json_val(String key, void *buf, size_t len) {
+String get_json_val(String key, String str) {
   String retval = "";
-  struct json_value_s *root = json_parse(buf, len);
+  struct json_value_s *root = json_parse(str.c_str(), str.length());
   struct json_object_s* object = (struct json_object_s*)root->payload;
   struct json_object_element_s* element = object->start;
   do {
@@ -42,30 +59,30 @@ String get_json_val(String key, void *buf, size_t len) {
   return retval;
 }
 
-bool Confrm::check_for_updates() {
+String Confrm::get_short_rest(String url) {
 
   // If not configured this cannot work
   if (!m_config_status) {
-    return false;
+    return "";
   }
 
   HTTPClient http;
-  String request = m_confrm_url + "/check_for_update/?name=" +
-                   m_package_name + "&node_id=" + WiFi.macAddress();
-  http.begin(request);
+  http.begin(url);
   int httpCode = http.GET();
 
-  if (httpCode > 0) {
+  if (httpCode == 200) {
 
     int len = http.getSize();
-    if (len >= 128) {
+    if (len >= SHORT_REST_RESPONSE_LENGTH) {
       ESP_LOGE(TAG, "confrm server sending too much data...");
       http.end();
-      return false;
+      return "";
     }
     
     // create buffer for read
-    uint8_t buff[128] = { 0 };
+    // One longer to ensure buf is null terminated
+    uint8_t *buff = new uint8_t[SHORT_REST_RESPONSE_LENGTH+1];
+    memset(buff, 0, SHORT_REST_RESPONSE_LENGTH + 1);
     uint8_t *buff_ptr = buff;
     
     // get tcp stream
@@ -75,7 +92,7 @@ bool Confrm::check_for_updates() {
     while(http.connected() && (len > 0 || len == -1)) {
       size_t size = stream->available();
       if(size) {
-        size_t to_read = sizeof(buff) - 1 - (buff_ptr - buff);
+        size_t to_read = SHORT_REST_RESPONSE_LENGTH - 1 - (buff_ptr - buff);
         if (to_read > len) to_read = len;
         int c = stream->readBytes(buff_ptr, to_read);
         buff_ptr += c;
@@ -84,19 +101,41 @@ bool Confrm::check_for_updates() {
         }
       }
     }
-   
-    String ver = get_json_val("current_version", buff, strlen((char*)buff));
-    ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name, ver);
 
-    if (0 != strcmp(m_config.current_version, ver.c_str())) {
-      ESP_LOGI(TAG, "Different version available, update required...");
-      m_next_version = ver;
-      m_next_blob = get_json_val("blob", buff, strlen((char*)buff));
-    }
-      
+    String retstr = String((char*)buff);
+    delete [] buff;
+
+    // Save data to output string
+    return retstr;
   }
+
   http.end();
+  return "";
 }
+
+bool Confrm::check_for_updates() {
+
+  set_time();
+
+  String request = m_confrm_url + "/check_for_update/?name=" +
+                   m_package_name + "&node_id=" + WiFi.macAddress();
+  String response = get_short_rest(request);
+
+  if (response == "") {
+    return false;
+  }
+
+  String ver = get_json_val("current_version", response);
+  ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name, ver);
+
+  if (0 != strcmp(m_config.current_version, ver.c_str())) {
+    ESP_LOGI(TAG, "Different version available, update required...");
+    m_next_version = ver;
+    m_next_blob = get_json_val("blob", response);
+  }
+
+}
+
 
 bool Confrm::do_update() {
 
@@ -293,8 +332,21 @@ void Confrm::timer_stop() {
 
 void Confrm::timer_callback(void *ptr) {
   Confrm *self = reinterpret_cast<Confrm*>(ptr);
+  self->timer_stop();
   if (self->check_for_updates()) {
     self->do_update();
+  }
+  self->timer_start();
+}
+
+void Confrm::set_time() {
+  String request = m_confrm_url + "/time/";
+  String response = get_short_rest(request);
+  if (response != "") {
+    int64_t epoch = get_json_int("time", response);
+    struct timeval now;
+    now.tv_sec = epoch;
+    settimeofday(&now, NULL);
   }
 }
 
@@ -327,6 +379,7 @@ Confrm::Confrm(
     timer_config.dispatch_method = ESP_TIMER_TASK;
     timer_config.name = "Confrm update timer";
     esp_timer_create(&timer_config, &m_timer);
+    timer_start();
   }
 }
 

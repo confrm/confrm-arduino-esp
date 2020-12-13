@@ -78,13 +78,17 @@ class Confrm {
 
     /**
      * @brief Called to load in config, if it exists.
+     *
      * @param reset_config  If true this will reset the config to be empty
+     * @return True if config loaded correctly
      */
     bool init_config(const bool reset_config = false);
 
     /**
      * @brief Save the config object to the non-volatile storage.
+     *
      * @param config Configuration to be saved to non-volatile storage.
+     * @return True of config saved correctly
      */
     bool save_config(config_s config);
 
@@ -99,7 +103,21 @@ class Confrm {
     String m_confrm_url;
 
     /**
+     * @brief Obtain result for short REST API calls
+     *
+     * Obtains response from server for given API call, uses full URL. If the
+     * response is longer than the heap allocation the method will return an
+     * empty string.
+     * 
+     * @param url   URL of REST GET call
+     * @return      Response as string, or empty string on error
+     */
+    String get_short_rest(String url);
+
+    /**
      * @brief Initialises REST calls to the confrm server to check for updates
+     *
+     * @return True if update requried
      */
      bool check_for_updates(void);
 
@@ -112,8 +130,11 @@ class Confrm {
 
     /**
      * @brief Action the required update
+     *
      * Does the update by calling the confrm server REST API to download the
      * binary blob for this node.
+     *
+     * @return Fale if update fails
      */
     bool do_update(void);
 
@@ -139,12 +160,19 @@ class Confrm {
 
     /**
      * @brief Timer callback
+     *
      * This is static so that the compiler knows where to point the callback to.
      * The method will reinterpret_cast the ptr to a Confrm* in order to access
      * check_for_updates and do_update methods.
+     *
      * @param ptr Pointer to 'this'
      */
     static void timer_callback(void *ptr);
+
+    /**
+     * @brief Pull time/date from confrm server
+     */
+    void set_time(void);
 };
 
 #endif
