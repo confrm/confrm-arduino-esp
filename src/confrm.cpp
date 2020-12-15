@@ -6,6 +6,7 @@
 
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 
 // Storage includes for persistent data
 #include "FS.h"
@@ -19,6 +20,7 @@
 #include "SPIFFS.h"
 
 #define SHORT_REST_RESPONSE_LENGTH 256
+
 
 
 int64_t get_json_int(String key, String str) {
@@ -132,8 +134,10 @@ bool Confrm::check_for_updates() {
     ESP_LOGI(TAG, "Different version available, update required...");
     m_next_version = ver;
     m_next_blob = get_json_val("blob", response);
+    return true;
   }
 
+  return false;
 }
 
 
@@ -148,9 +152,6 @@ bool Confrm::do_update() {
   if (m_next_version == "" or m_next_blob == "") {
     return false;
   }
-
-  // Stop any additional updates happening while processing this one
-  timer_stop();
 
   HTTPClient http;
   String request = m_confrm_url + "/get_blob/?name=" +
@@ -184,6 +185,7 @@ bool Confrm::do_update() {
     
     // read all data from server
     while(http.connected() && (len > 0 || len == -1)) {
+      esp_task_wdt_reset();
       size_t size = stream->available();
       if(size) {
         size_t to_read = sizeof(buff);
@@ -205,7 +207,6 @@ bool Confrm::do_update() {
    
     esp_ota_end(ota_handle);
 
-    memcpy(m_config.rollback_version, m_config.current_version, sizeof(m_config.current_version));
     for (int i = 0; i < sizeof(m_config.current_version); i++) {
       if (i < m_next_version.length()) {
         m_config.current_version[i] = m_next_version.c_str()[i];
@@ -236,7 +237,6 @@ bool Confrm::init_config(const bool reset_config) {
     ESP_LOGD(TAG, "Resetting config");
     config_s config;
     memset(config.current_version, 0, 32);
-    memset(config.rollback_version, 0, 32);
     save_config(config);
   }
 
@@ -249,11 +249,10 @@ bool Confrm::init_config(const bool reset_config) {
     ESP_LOGD(TAG, "Failed to open file for reading, creating default config");
     config_s config;
     memset(config.current_version, 0, 32);
-    memset(config.rollback_version, 0, 32);
     if (save_config(config)) {
       file = SPIFFS.open(m_config_file.c_str());
       if (!file) {
-        ESP_LOGD(TAG, "Error creating new config_file, but unable to open, confrm will not work");
+        ESP_LOGD(TAG, "Error created new config_file, but unable to open, confrm will not work");
         return false;
       }
     } else {
@@ -270,11 +269,8 @@ bool Confrm::init_config(const bool reset_config) {
         size_t bytes_read = file.read((uint8_t*)&m_config, sizeof(config_s));
         // Ensure null terminated strings...
         m_config.current_version[31] = '\0';
-        m_config.rollback_version[31] = '\0';
         ESP_LOGD(TAG, "confrm config is:");
         ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
-        ESP_LOGD(TAG, "\trollback_version: \"%s\"", m_config.rollback_version);
-        ESP_LOGD(TAG, "\tupdate_in_progress: \"%d\"", m_config.update_in_progress);
         break;
       others:
         ESP_LOGE(TAG, "Unknown config version");
@@ -286,7 +282,6 @@ bool Confrm::init_config(const bool reset_config) {
     ESP_LOGD(TAG, "Config file was empty, populating with empty config");
     file.close();
     memset(m_config.current_version, 0, 32);
-    memset(m_config.rollback_version, 0, 32);
     if (!save_config(m_config)) {
       ESP_LOGD(TAG, "Error created new config_file, confrm will not work");
       return false;
@@ -306,12 +301,9 @@ bool Confrm::save_config(config_s config) {
   }
 
   config.current_version[31] = '\0';
-  config.rollback_version[31] = '\0';
 
   file.write(m_config_version);
   file.write((uint8_t*)config.current_version, 32);
-  file.write((uint8_t*)config.rollback_version, 32);
-  file.write(config.update_in_progress);
 
   file.close();
 
@@ -334,7 +326,8 @@ void Confrm::timer_callback(void *ptr) {
   Confrm *self = reinterpret_cast<Confrm*>(ptr);
   self->timer_stop();
   if (self->check_for_updates()) {
-    self->do_update();
+    ESP_LOGD(TAG, "Rebooting from timer_callback");
+    hard_restart(); // The ESP32 does not like updating from the timer callback
   }
   self->timer_start();
 }
@@ -348,6 +341,14 @@ void Confrm::set_time() {
     now.tv_sec = epoch;
     settimeofday(&now, NULL);
   }
+}
+
+void Confrm::hard_restart() {
+  // Bit hacky, use watchdog timer to force a retart. The ESP_restart()
+  // method does not reboot everything and was leading to instability
+  esp_task_wdt_init(1, true);
+  esp_task_wdt_add(NULL);
+  while(true);
 }
 
 Confrm::Confrm(

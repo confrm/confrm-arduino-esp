@@ -19,6 +19,8 @@
 #ifndef _CONFRM_H_
 #define _CONFRM_H_
 
+#include <unistd.h> // uintXX_t definition
+
 #include <Arduino.h> // String type
 #include "esp_timer.h" // esp_timer_handle_t definition
 
@@ -60,7 +62,7 @@ class Confrm {
     /**
      * Currently supported configuration version, stored along with config.
      * If config version changes, the class should include the ability to
-     * update the config to the newer vesrion from any older version.
+     * update the config to the newer version from any older version.
      */
     const uint8_t m_config_version = 1;
 
@@ -70,8 +72,6 @@ class Confrm {
      */
     struct config_s {
       char current_version[32];
-      char rollback_version[32];
-      char update_in_progress;
     };
     config_s m_config;
     bool m_config_status = false;
@@ -173,6 +173,11 @@ class Confrm {
      * @brief Pull time/date from confrm server
      */
     void set_time(void);
+
+    /**
+     * @brief Force hard restart of device
+     */ 
+    void hard_restart(void);
 };
 
 #endif
