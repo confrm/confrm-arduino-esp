@@ -5,15 +5,15 @@
 #include <WiFiClient.h>
 
 #include "esp_ota_ops.h"
-#include "esp_timer.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 
 // Storage includes for persistent data
 #include "FS.h"
 #include "SPIFFS.h"
 
-#include "json.h" // For parsing response from confrm server
 #include "confrm.h"
+#include "json.h" // For parsing response from confrm server
 
 // Storage includes for persistent data
 #include "FS.h"
@@ -21,23 +21,22 @@
 
 #define SHORT_REST_RESPONSE_LENGTH 256
 
-
-
 int64_t get_json_int(String key, String str) {
   int64_t retval;
   struct json_value_s *root = json_parse(str.c_str(), str.length());
-  struct json_object_s* object = (struct json_object_s*)root->payload;
-  struct json_object_element_s* element = object->start;
+  struct json_object_s *object = (struct json_object_s *)root->payload;
+  struct json_object_element_s *element = object->start;
   do {
-    struct json_string_s* element_name = element->name;
-    if (0==strcmp(element_name->string,key.c_str())) {
-      struct json_value_s* element_value = element->value;
-      struct json_number_s* number = (struct json_number_s*)element_value->payload;
+    struct json_string_s *element_name = element->name;
+    if (0 == strcmp(element_name->string, key.c_str())) {
+      struct json_value_s *element_value = element->value;
+      struct json_number_s *number =
+          (struct json_number_s *)element_value->payload;
       retval = atoll(number->number);
       break;
     }
     element = element->next;
-  } while(element != NULL);
+  } while (element != NULL);
   free(root);
   return retval;
 }
@@ -45,18 +44,19 @@ int64_t get_json_int(String key, String str) {
 String get_json_val(String key, String str) {
   String retval = "";
   struct json_value_s *root = json_parse(str.c_str(), str.length());
-  struct json_object_s* object = (struct json_object_s*)root->payload;
-  struct json_object_element_s* element = object->start;
+  struct json_object_s *object = (struct json_object_s *)root->payload;
+  struct json_object_element_s *element = object->start;
   do {
-    struct json_string_s* element_name = element->name;
-    if (0==strcmp(element_name->string,key.c_str())) {
-      struct json_value_s* element_value = element->value;
-      struct json_string_s* string = (struct json_string_s*)element_value->payload;
+    struct json_string_s *element_name = element->name;
+    if (0 == strcmp(element_name->string, key.c_str())) {
+      struct json_value_s *element_value = element->value;
+      struct json_string_s *string =
+          (struct json_string_s *)element_value->payload;
       retval = String(string->string);
       break;
     }
     element = element->next;
-  } while(element != NULL);
+  } while (element != NULL);
   free(root);
   return retval;
 }
@@ -80,32 +80,33 @@ String Confrm::get_short_rest(String url) {
       http.end();
       return "";
     }
-    
+
     // create buffer for read
     // One longer to ensure buf is null terminated
-    uint8_t *buff = new uint8_t[SHORT_REST_RESPONSE_LENGTH+1];
+    uint8_t *buff = new uint8_t[SHORT_REST_RESPONSE_LENGTH + 1];
     memset(buff, 0, SHORT_REST_RESPONSE_LENGTH + 1);
     uint8_t *buff_ptr = buff;
-    
+
     // get tcp stream
-    WiFiClient * stream = http.getStreamPtr();
-    
+    WiFiClient *stream = http.getStreamPtr();
+
     // read all data from server
-    while(http.connected() && (len > 0 || len == -1)) {
+    while (http.connected() && (len > 0 || len == -1)) {
       size_t size = stream->available();
-      if(size) {
+      if (size) {
         size_t to_read = SHORT_REST_RESPONSE_LENGTH - 1 - (buff_ptr - buff);
-        if (to_read > len) to_read = len;
+        if (to_read > len)
+          to_read = len;
         int c = stream->readBytes(buff_ptr, to_read);
         buff_ptr += c;
-        if(len > 0) {
+        if (len > 0) {
           len -= c;
         }
       }
     }
 
-    String retstr = String((char*)buff);
-    delete [] buff;
+    String retstr = String((char *)buff);
+    delete[] buff;
 
     // Save data to output string
     return retstr;
@@ -119,8 +120,8 @@ bool Confrm::check_for_updates() {
 
   set_time();
 
-  String request = m_confrm_url + "/check_for_update/?name=" +
-                   m_package_name + "&node_id=" + WiFi.macAddress();
+  String request = m_confrm_url + "/check_for_update/?name=" + m_package_name +
+                   "&node_id=" + WiFi.macAddress();
   String response = get_short_rest(request);
 
   if (response == "") {
@@ -128,7 +129,8 @@ bool Confrm::check_for_updates() {
   }
 
   String ver = get_json_val("current_version", response);
-  ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name, ver);
+  ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name,
+           ver);
 
   if (0 != strcmp(m_config.current_version, ver.c_str())) {
     ESP_LOGI(TAG, "Different version available, update required...");
@@ -139,7 +141,6 @@ bool Confrm::check_for_updates() {
 
   return false;
 }
-
 
 bool Confrm::do_update() {
 
@@ -154,8 +155,8 @@ bool Confrm::do_update() {
   }
 
   HTTPClient http;
-  String request = m_confrm_url + "/get_blob/?name=" +
-                   m_package_name + "&blob=" + m_next_blob;
+  String request = m_confrm_url + "/get_blob/?name=" + m_package_name +
+                   "&blob=" + m_next_blob;
   http.begin(request);
   int httpCode = http.GET();
 
@@ -176,20 +177,21 @@ bool Confrm::do_update() {
       timer_start();
       return false;
     }
-    
+
     // create buffer for read
-    uint8_t buff[128] = { 0 };
-    
+    uint8_t buff[128] = {0};
+
     // get tcp stream
-    WiFiClient * stream = http.getStreamPtr();
-    
+    WiFiClient *stream = http.getStreamPtr();
+
     // read all data from server
-    while(http.connected() && (len > 0 || len == -1)) {
+    while (http.connected() && (len > 0 || len == -1)) {
       esp_task_wdt_reset();
       size_t size = stream->available();
-      if(size) {
+      if (size) {
         size_t to_read = sizeof(buff);
-        if (to_read > len) to_read = len;
+        if (to_read > len)
+          to_read = len;
         int c = stream->readBytes(buff, to_read);
         err = esp_ota_write(ota_handle, buff, c);
         if (err != ESP_OK) {
@@ -199,12 +201,12 @@ bool Confrm::do_update() {
           timer_start();
           return false;
         }
-        if(len > 0) {
+        if (len > 0) {
           len -= c;
         }
       }
     }
-   
+
     esp_ota_end(ota_handle);
 
     for (int i = 0; i < sizeof(m_config.current_version); i++) {
@@ -220,7 +222,7 @@ bool Confrm::do_update() {
     http.end();
     ESP.restart();
   }
-  
+
   timer_start();
   http.end();
 }
@@ -228,7 +230,7 @@ bool Confrm::do_update() {
 bool Confrm::init_config(const bool reset_config) {
 
   // Attempt to start FS, if it does not start then try formatting it
-  if(!SPIFFS.begin(true)){
+  if (!SPIFFS.begin(true)) {
     ESP_LOGD(TAG, "Failed to init SPIFFS, confrm will not work");
     return false;
   }
@@ -242,17 +244,17 @@ bool Confrm::init_config(const bool reset_config) {
 
   ESP_LOGD(TAG, "Getting confrm config");
 
-
   File file = SPIFFS.open(m_config_file.c_str());
 
-  if(!file || file.isDirectory()) {
+  if (!file || file.isDirectory()) {
     ESP_LOGD(TAG, "Failed to open file for reading, creating default config");
     config_s config;
     memset(config.current_version, 0, 32);
     if (save_config(config)) {
       file = SPIFFS.open(m_config_file.c_str());
       if (!file) {
-        ESP_LOGD(TAG, "Error created new config_file, but unable to open, confrm will not work");
+        ESP_LOGD(TAG, "Error created new config_file, but unable to open, "
+                      "confrm will not work");
         return false;
       }
     } else {
@@ -265,18 +267,18 @@ bool Confrm::init_config(const bool reset_config) {
     uint8_t version = file.read();
     ESP_LOGD(TAG, "Config version %d", version);
     switch (version) {
-      case 1:
-        size_t bytes_read = file.read((uint8_t*)&m_config, sizeof(config_s));
-        // Ensure null terminated strings...
-        m_config.current_version[31] = '\0';
-        ESP_LOGD(TAG, "confrm config is:");
-        ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
-        break;
-      others:
-        ESP_LOGE(TAG, "Unknown config version");
-        file.close();
-        return false;
-        break;
+    case 1:
+      size_t bytes_read = file.read((uint8_t *)&m_config, sizeof(config_s));
+      // Ensure null terminated strings...
+      m_config.current_version[31] = '\0';
+      ESP_LOGD(TAG, "confrm config is:");
+      ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
+      break;
+    others:
+      ESP_LOGE(TAG, "Unknown config version");
+      file.close();
+      return false;
+      break;
     }
   } else {
     ESP_LOGD(TAG, "Config file was empty, populating with empty config");
@@ -288,7 +290,7 @@ bool Confrm::init_config(const bool reset_config) {
     }
   }
 
-  ESP_LOGD(TAG, "Config loaded"); 
+  ESP_LOGD(TAG, "Config loaded");
   return true;
 }
 
@@ -303,7 +305,7 @@ bool Confrm::save_config(config_s config) {
   config.current_version[31] = '\0';
 
   file.write(m_config_version);
-  file.write((uint8_t*)config.current_version, 32);
+  file.write((uint8_t *)config.current_version, 32);
 
   file.close();
 
@@ -323,11 +325,12 @@ void Confrm::timer_stop() {
 }
 
 void Confrm::timer_callback(void *ptr) {
-  Confrm *self = reinterpret_cast<Confrm*>(ptr);
+  Confrm *self = reinterpret_cast<Confrm *>(ptr);
   self->timer_stop();
   if (self->check_for_updates()) {
     ESP_LOGD(TAG, "Rebooting from timer_callback");
-    self->hard_restart(); // The ESP32 does not like updating from the timer callback
+    self->hard_restart(); // The ESP32 does not like updating from the timer
+                          // callback
   }
   if (self->m_reregister_period > 0) {
     if (self->m_reregister_period_count > 0) {
@@ -352,10 +355,9 @@ void Confrm::set_time() {
 }
 
 void Confrm::register_node() {
-  String request = m_confrm_url + "/register_node/" +
-                  "?package=" + m_package_name + 
-                  "&node_id=" + WiFi.macAddress() +
-                  "&version=" + m_config.current_version;
+  String request =
+      m_confrm_url + "/register_node/" + "?package=" + m_package_name +
+      "&node_id=" + WiFi.macAddress() + "&version=" + m_config.current_version;
   get_short_rest(request);
 }
 
@@ -364,14 +366,12 @@ void Confrm::hard_restart() {
   // method does not reboot everything and was leading to instability
   esp_task_wdt_init(1, true);
   esp_task_wdt_add(NULL);
-  while(true);
+  while (true)
+    ;
 }
 
-Confrm::Confrm(
-    String package_name,
-    String confrm_url,
-    int32_t update_period,
-    const bool reset_config) {
+Confrm::Confrm(String package_name, String confrm_url, int32_t update_period,
+               const bool reset_config) {
 
   const esp_partition_t *current = esp_ota_get_running_partition();
   ESP_LOGD(TAG, "Booted to %d", current->address);
@@ -391,7 +391,7 @@ Confrm::Confrm(
   m_update_period = update_period;
   if (m_update_period > 2) {
     esp_timer_create_args_t timer_config;
-    timer_config.arg = reinterpret_cast<void*>(this);
+    timer_config.arg = reinterpret_cast<void *>(this);
     timer_config.callback = Confrm::timer_callback;
     timer_config.dispatch_method = ESP_TIMER_TASK;
     timer_config.name = "Confrm update timer";
@@ -401,7 +401,4 @@ Confrm::Confrm(
 
   m_reregister_period_count = m_reregister_period;
   register_node();
-
 }
-
-
