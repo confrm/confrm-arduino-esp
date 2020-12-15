@@ -327,7 +327,15 @@ void Confrm::timer_callback(void *ptr) {
   self->timer_stop();
   if (self->check_for_updates()) {
     ESP_LOGD(TAG, "Rebooting from timer_callback");
-    hard_restart(); // The ESP32 does not like updating from the timer callback
+    self->hard_restart(); // The ESP32 does not like updating from the timer callback
+  }
+  if (self->m_reregister_period > 0) {
+    if (self->m_reregister_period_count > 0) {
+      self->m_reregister_period_count -= 1;
+    } else {
+      self->m_reregister_period_count = self->m_reregister_period;
+      self->register_node();
+    }
   }
   self->timer_start();
 }
@@ -341,6 +349,14 @@ void Confrm::set_time() {
     now.tv_sec = epoch;
     settimeofday(&now, NULL);
   }
+}
+
+void Confrm::register_node() {
+  String request = m_confrm_url + "/register_node/" +
+                  "?package=" + m_package_name + 
+                  "&node_id=" + WiFi.macAddress() +
+                  "&version=" + m_config.current_version;
+  get_short_rest(request);
 }
 
 void Confrm::hard_restart() {
@@ -382,6 +398,10 @@ Confrm::Confrm(
     esp_timer_create(&timer_config, &m_timer);
     timer_start();
   }
+
+  m_reregister_period_count = m_reregister_period;
+  register_node();
+
 }
 
 

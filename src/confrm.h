@@ -175,6 +175,21 @@ class Confrm {
     void set_time(void);
 
     /**
+     * @brief Registers node with confrm server
+     */
+    void register_node(void);
+
+    /**
+     * Number of m_update_periods to re-register with confrm server
+     */
+    int m_reregister_period = 10;
+
+    /**
+     * Track when we need to re-register with confrm
+     */
+    int m_reregister_period_count = 0;
+
+    /**
      * @brief Force hard restart of device
      */ 
     void hard_restart(void);
