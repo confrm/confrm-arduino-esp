@@ -43,7 +43,8 @@ public:
    *                      updates, minimum 2 seconds, maximum xx. Set to
    *                      -1 to disable.
    */
-  Confrm(String package_name, String confrm_url, int32_t update_period = -1,
+  Confrm(String package_name, String confrm_url, String node_description = "",
+         String node_platform = "", int32_t update_period = -1,
          bool reset_config = false);
 
 private:
@@ -86,7 +87,7 @@ private:
   bool save_config(config_s config);
 
   /**
-   * Package name is the unique key for each node type
+   * @brief Package name is the unique key for each node type
    */
   String m_package_name;
 
@@ -96,16 +97,30 @@ private:
   String m_confrm_url;
 
   /**
+   * @brief Description of this node (i.e. Temperature Sensor)
+   */
+  String m_node_description;
+
+  /**
+   * @brief The platform this node identifies as (i.e. esp32)
+   */
+  String m_node_platform;
+
+  /**
    * @brief Obtain result for short REST API calls
    *
    * Obtains response from server for given API call, uses full URL. If the
    * response is longer than the heap allocation the method will return an
    * empty string.
    *
-   * @param url   URL of REST GET call
+   * @param url       URL of REST GET call
+   * @param type      GET/PUT/POST
+   * @param payload   PUT/POST content, if required
+   * @param httpCode  Will contain the return http code
    * @return      Response as string, or empty string on error
    */
-  String get_short_rest(String url);
+  String short_rest(String url, int &httpCode, String type = "GET",
+                    String payload = "");
 
   /**
    * @brief Initialises REST calls to the confrm server to check for updates

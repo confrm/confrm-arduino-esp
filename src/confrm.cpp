@@ -1,7 +1,7 @@
 #include <cstring>
 #include <sys/time.h>
 
-#include <HTTPClient.h>
+#include <HTTPClient.h> // NOLINT
 #include <WiFiClient.h>
 
 #include "esp_ota_ops.h"
@@ -61,7 +61,8 @@ String get_json_val(String key, String str) {
   return retval;
 }
 
-String Confrm::get_short_rest(String url) {
+String Confrm::short_rest(String url, int &httpCode, String type,
+                          String payload) {
 
   // If not configured this cannot work
   if (!m_config_status) {
@@ -70,38 +71,47 @@ String Confrm::get_short_rest(String url) {
 
   HTTPClient http;
   http.begin(url);
-  int httpCode = http.GET();
 
-  if (httpCode == 200) {
+  if (type == "GET") {
+    httpCode = http.GET();
+  } else if (type == "PUT") {
+    httpCode = http.PUT(payload);
+  } else if (type == "POST") {
+    httpCode = http.POST(payload);
+  } else {
+    ESP_LOGE(TAG, "Unsupported call type");
+    httpCode = -1;
+    http.end();
+    return "";
+  }
 
-    int len = http.getSize();
-    if (len >= SHORT_REST_RESPONSE_LENGTH) {
-      ESP_LOGE(TAG, "confrm server sending too much data...");
-      http.end();
-      return "";
-    }
+  int len = http.getSize();
+  if (len >= SHORT_REST_RESPONSE_LENGTH) {
+    ESP_LOGE(TAG, "confrm server sending too much data...");
+    http.end();
+    return "";
+  }
 
-    // create buffer for read
-    // One longer to ensure buf is null terminated
-    uint8_t *buff = new uint8_t[SHORT_REST_RESPONSE_LENGTH + 1];
-    memset(buff, 0, SHORT_REST_RESPONSE_LENGTH + 1);
-    uint8_t *buff_ptr = buff;
+  // create buffer for read
+  // One longer to ensure buf is null terminated
+  uint8_t *buff = new uint8_t[SHORT_REST_RESPONSE_LENGTH + 1];
+  memset(buff, 0, SHORT_REST_RESPONSE_LENGTH + 1);
+  uint8_t *buff_ptr = buff;
 
-    // get tcp stream
-    WiFiClient *stream = http.getStreamPtr();
+  // get tcp stream
+  WiFiClient *stream = http.getStreamPtr();
 
-    // read all data from server
-    while (http.connected() && (len > 0 || len == -1)) {
-      size_t size = stream->available();
-      if (size) {
-        size_t to_read = SHORT_REST_RESPONSE_LENGTH - 1 - (buff_ptr - buff);
-        if (to_read > len)
-          to_read = len;
-        int c = stream->readBytes(buff_ptr, to_read);
-        buff_ptr += c;
-        if (len > 0) {
-          len -= c;
-        }
+  // read all data from server
+  while (http.connected() && (len > 0 || len == -1)) {
+    size_t size = stream->available();
+    if (size) {
+      size_t to_read = SHORT_REST_RESPONSE_LENGTH - 1 - (buff_ptr - buff);
+      if (to_read > len)
+        to_read = len;
+      int c = stream->readBytes(buff_ptr, to_read);
+      buff_ptr += c;
+      if (len > 0) {
+        len -= c;
       }
     }
 
@@ -120,11 +130,12 @@ bool Confrm::check_for_updates() {
 
   set_time();
 
+  int httpCode = 0;
   String request = m_confrm_url + "/check_for_update/?name=" + m_package_name +
                    "&node_id=" + WiFi.macAddress();
-  String response = get_short_rest(request);
+  String response = short_rest(request, httpCode, "GET");
 
-  if (response == "") {
+  if (httpCode != 200 || response == "" || response == "{}") {
     return false;
   }
 
@@ -155,8 +166,8 @@ bool Confrm::do_update() {
   }
 
   HTTPClient http;
-  String request = m_confrm_url + "/get_blob/?name=" + m_package_name +
-                   "&blob=" + m_next_blob;
+  String request =
+      m_confrm_url + "/blob/?name=" + m_package_name + "&blob=" + m_next_blob;
   http.begin(request);
   int httpCode = http.GET();
 
@@ -345,8 +356,9 @@ void Confrm::timer_callback(void *ptr) {
 
 void Confrm::set_time() {
   String request = m_confrm_url + "/time/";
-  String response = get_short_rest(request);
-  if (response != "") {
+  int httpCode = 0;
+  String response = short_rest(request, httpCode, "GET");
+  if (httpCode == 200 && response != "" && response != "{}") {
     int64_t epoch = get_json_int("time", response);
     struct timeval now;
     now.tv_sec = epoch;
@@ -355,14 +367,16 @@ void Confrm::set_time() {
 }
 
 void Confrm::register_node() {
+  int httpCode = 0;
   String request =
       m_confrm_url + "/register_node/" + "?package=" + m_package_name +
-      "&node_id=" + WiFi.macAddress() + "&version=" + m_config.current_version;
-  get_short_rest(request);
+      "&node_id=" + WiFi.macAddress() + "&version=" + m_config.current_version +
+      "&description=" + m_node_description + "&platform=" + m_node_platform;
+  short_rest(request, httpCode, "PUT");
 }
 
 void Confrm::hard_restart() {
-  // Bit hacky, use watchdog timer to force a retart. The ESP_restart()
+  // Bit hacky, use watchdog timer to force a restart. The ESP_restart()
   // method does not reboot everything and was leading to instability
   esp_task_wdt_init(1, true);
   esp_task_wdt_add(NULL);
@@ -370,7 +384,8 @@ void Confrm::hard_restart() {
     ;
 }
 
-Confrm::Confrm(String package_name, String confrm_url, int32_t update_period,
+Confrm::Confrm(String package_name, String confrm_url, String node_description,
+               String node_platform, int32_t update_period,
                const bool reset_config) {
 
   const esp_partition_t *current = esp_ota_get_running_partition();
@@ -378,6 +393,8 @@ Confrm::Confrm(String package_name, String confrm_url, int32_t update_period,
 
   m_package_name = package_name;
   m_confrm_url = confrm_url;
+  m_node_description = node_description;
+  m_node_platform = node_platform;
 
   m_config_status = init_config(reset_config);
   if (!m_config_status) {
