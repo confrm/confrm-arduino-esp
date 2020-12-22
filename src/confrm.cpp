@@ -21,6 +21,11 @@
 
 #define SHORT_REST_RESPONSE_LENGTH 256
 
+String simple_url_encode(String input) {
+  input.replace(" ", "%20");
+  return input;
+}
+
 int64_t get_json_int(String key, String str) {
   int64_t retval;
   struct json_value_s *root = json_parse(str.c_str(), str.length());
@@ -393,7 +398,7 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
 
   m_package_name = package_name;
   m_confrm_url = confrm_url;
-  m_node_description = node_description;
+  m_node_description = simple_url_encode(node_description);
   m_node_platform = node_platform;
 
   m_config_status = init_config(reset_config);
