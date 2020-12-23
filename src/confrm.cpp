@@ -1,3 +1,5 @@
+#include <string>
+#include <vector>
 #include <cstring>
 #include <sys/time.h>
 
@@ -15,7 +17,7 @@
 #include "SPIFFS.h"
 
 #include "confrm.h"
-#include "json.h" // For parsing response from confrm server
+#include "simple_json.h"
 
 // Storage includes for persistent data
 #include "FS.h"
@@ -45,7 +47,7 @@ int hex2bin(unsigned char* bin,  unsigned int bin_len, const char* hex) {
     return 0;
 }
 
-
+#if 0
 int64_t get_json_int(String key, String str) {
   int64_t retval;
   struct json_value_s *root = json_parse(str.c_str(), str.length());
@@ -85,6 +87,7 @@ String get_json_val(String key, String str) {
   free(root);
   return retval;
 }
+#endif
 
 String Confrm::short_rest(String url, int &httpCode, String type,
                           String payload) {
@@ -170,15 +173,17 @@ bool Confrm::check_for_updates() {
     return false;
   }
 
-  String ver = get_json_val("current_version", response);
+  std::vector<SimpleJSONElement> content = simple_json(response);
+
+  String ver = get_simple_json_string(content, "current_version");
   ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name,
            ver);
 
   if (0 != strcmp(m_config.current_version, ver.c_str())) {
     ESP_LOGI(TAG, "Different version available, update required...");
     m_next_version = ver;
-    m_next_blob = get_json_val("blob", response);
-    hex2bin(m_next_hash, 32, get_json_val("hash", response).c_str());
+    m_next_blob = get_simple_json_string(content, "blob");
+    hex2bin(m_next_hash, 32, get_simple_json_string(content, "hash").c_str());
     return true;
   }
 
@@ -409,7 +414,8 @@ void Confrm::set_time() {
   int httpCode = 0;
   String response = short_rest(request, httpCode, "GET");
   if (httpCode == 200 && response != "" && response != "{}") {
-    int64_t epoch = get_json_int("time", response);
+    std::vector<SimpleJSONElement> content = simple_json(response);
+    int64_t epoch = get_simple_json_number(content, "time");
     struct timeval now;
     now.tv_sec = epoch;
     settimeofday(&now, NULL);
