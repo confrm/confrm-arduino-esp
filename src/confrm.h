@@ -134,6 +134,7 @@ private:
    * here.
    */
   String m_next_version;
+  unsigned char m_next_hash[32];
   String m_next_blob;
 
   /**

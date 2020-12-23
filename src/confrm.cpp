@@ -8,6 +8,8 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 
+#include "mbedtls/sha256.h"
+
 // Storage includes for persistent data
 #include "FS.h"
 #include "SPIFFS.h"
@@ -25,6 +27,24 @@ String simple_url_encode(String input) {
   input.replace(" ", "%20");
   return input;
 }
+
+// https://stackoverflow.com/a/62612409
+static char h2b(char c) {
+    return '0'<=c && c<='9' ? c - '0'      :
+           'A'<=c && c<='F' ? c - 'A' + 10 :
+           'a'<=c && c<='f' ? c - 'a' + 10 :
+           /* else */         -1;
+}
+
+int hex2bin(unsigned char* bin,  unsigned int bin_len, const char* hex) {
+    for(unsigned int i=0; i<bin_len; i++) {
+        char b[2] = {h2b(hex[2*i+0]), h2b(hex[2*i+1])};
+        if(b[0]<0 || b[1]<0) return -1;
+        bin[i] = b[0]*16 + b[1];
+    }
+    return 0;
+}
+
 
 int64_t get_json_int(String key, String str) {
   int64_t retval;
@@ -152,6 +172,7 @@ bool Confrm::check_for_updates() {
     ESP_LOGI(TAG, "Different version available, update required...");
     m_next_version = ver;
     m_next_blob = get_json_val("blob", response);
+    hex2bin(m_next_hash, 32, get_json_val("hash", response).c_str());
     return true;
   }
 
@@ -188,14 +209,19 @@ bool Confrm::do_update() {
     err = esp_ota_begin(next, len, &ota_handle);
 
     if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Error initalizing OTA process");
+      ESP_LOGE(TAG, "Error initializing OTA process");
       http.end();
-      timer_start();
       return false;
     }
 
     // create buffer for read
     uint8_t buff[128] = {0};
+
+    // Create buffer and context for sha256 calc, start the hashing
+    unsigned char hash[32];
+    mbedtls_sha256_context ctx2;
+    mbedtls_sha256_init(&ctx2);
+    mbedtls_sha256_starts(&ctx2, 0);
 
     // get tcp stream
     WiFiClient *stream = http.getStreamPtr();
@@ -209,12 +235,12 @@ bool Confrm::do_update() {
         if (to_read > len)
           to_read = len;
         int c = stream->readBytes(buff, to_read);
+        mbedtls_sha256_update(&ctx2, buff, c);
         err = esp_ota_write(ota_handle, buff, c);
         if (err != ESP_OK) {
           ESP_LOGE(TAG, "Error initializing OTA process");
           esp_ota_end(ota_handle);
           http.end();
-          timer_start();
           return false;
         }
         if (len > 0) {
@@ -225,6 +251,19 @@ bool Confrm::do_update() {
 
     esp_ota_end(ota_handle);
 
+    mbedtls_sha256_finish(&ctx2, hash);
+    bool integrity = true;
+    for (int i = 0; i < 32; i++) {
+      if (hash[i] != m_next_hash[i]) {
+        integrity = false;
+      }
+    }
+    if (integrity == false) {
+      ESP_LOGE(TAG, "Blob sha256 does not match expected value");
+      http.end();
+      return false;
+    }
+
     for (int i = 0; i < sizeof(m_config.current_version); i++) {
       if (i < m_next_version.length()) {
         m_config.current_version[i] = m_next_version.c_str()[i];
@@ -234,12 +273,11 @@ bool Confrm::do_update() {
     }
     save_config(m_config);
 
-    esp_ota_set_boot_partition(next);
+    //esp_ota_set_boot_partition(next); ?/ TODO: This disables OTA working
     http.end();
     ESP.restart();
   }
 
-  timer_start();
   http.end();
 }
 
