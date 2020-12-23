@@ -110,6 +110,12 @@ String Confrm::short_rest(String url, int &httpCode, String type,
     return "";
   }
 
+  if (httpCode < 0) {
+    ESP_LOGI(TAG, "Unable to connect to confrm server");
+    http.end();
+    return "";
+  }
+
   int len = http.getSize();
   if (len >= SHORT_REST_RESPONSE_LENGTH) {
     ESP_LOGE(TAG, "confrm server sending too much data...");
@@ -252,6 +258,7 @@ bool Confrm::do_update() {
     esp_ota_end(ota_handle);
 
     mbedtls_sha256_finish(&ctx2, hash);
+    mbedtls_sha256_free(&ctx2);
     bool integrity = true;
     for (int i = 0; i < 32; i++) {
       if (hash[i] != m_next_hash[i]) {
