@@ -1,18 +1,46 @@
 #ifndef __SIMPLEJSON_H__
 #define __SIMPLEJSON_H__
 
+#ifndef CPP_STANDARD
 #include <Arduino.h>
+#else
+#define String std::string
+#endif
+
 #include <cstdlib>
 #include <vector>
 
-typedef enum SimpleJSONType { STRING, NUMBER } SimpleJSONType;
+typedef enum SimpleJSONType { STRING, BOOLEAN, NUMBER } SimpleJSONType;
 
 struct SimpleJSONElement {
   String key;
   SimpleJSONType type;
   String value_string;
   int64_t value_number;
+  bool value_boolean;
 };
+
+
+std::string trim(const std::string &s)
+{
+    std::string::const_iterator it = s.begin();
+    while (it != s.end() && isspace(*it))
+        it++;
+
+    std::string::const_reverse_iterator rit = s.rbegin();
+    while (rit.base() != it && isspace(*rit))
+        rit++;
+
+    return std::string(it, rit.base());
+}
+
+bool to_bool(std::string str) {
+    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+    std::istringstream is(str);
+    bool b;
+    is >> std::boolalpha >> b;
+    return b;
+}
 
 std::vector<SimpleJSONElement> simple_json(String str) {
 
@@ -22,9 +50,9 @@ std::vector<SimpleJSONElement> simple_json(String str) {
    *
    * On any formatting error the output will be garbled or worse.
    *
-   * The key must be a simple string contianing only 0-7,a-z,A-Z,_,-
+   * The key must be a simple string containing only 0-7,a-z,A-Z,_,-
    *
-   * The value may be a number (up to int64_t size) or a string follwoing normal JSON string
+   * The value may be a number (up to int64_t size) or a string following normal JSON string
    * requirements
    *
    * i.e:
@@ -62,14 +90,14 @@ std::vector<SimpleJSONElement> simple_json(String str) {
    */
   
   size_t key_start = -1, key_end = -1, value_start = -1, value_end = -1;
-  bool advance = true; // Used to inidcate advancing over blank space
-  char last_char = '\0'; // Used to keep track of previous charachter for escape sequence
+  bool advance = true; // Used to indicate advancing over blank space
+  char last_char = '\0'; // Used to keep track of previous character for escape sequence
   bool was_ending = false;
   SimpleJSONType value_type; // Used to track the detected number type
 
   // Iterating over the length of the string
   for (; ind < str.length(); ind++) {
-
+      
     // Advance to non-space
     if (advance == true && str[ind] == ' ') {
       continue;
@@ -100,13 +128,18 @@ std::vector<SimpleJSONElement> simple_json(String str) {
     // Once white space has been advanced, look for colon delimiter, then look for a
     // double quite (indicating a string), otherwise treat as a number
     if (value_start == -1) {
+      last_char = '\0'; // Init the last_char to something non-escape
       if (str[ind] == ':') {
         advance = true;
         continue;
       } else if (str[ind] == '"') {
         value_start = ind + 1;
         value_type = STRING;
-        last_char = '\0'; // Init the last_char to something non-escape
+        advance = false;
+        continue;
+      } else if (tolower(str[ind]) == 'f' || tolower(str[ind]) == 't') {
+        value_start = ind;
+        value_type = BOOLEAN;
         advance = false;
         continue;
       } else {
@@ -118,12 +151,12 @@ std::vector<SimpleJSONElement> simple_json(String str) {
     }
 
     // Look for the end of the value part, for numbers this will be a comma or the end of
-    // JOSN parenthesis. For strings it will be a double quote. Use the last_char to store
-    // the last processed char, when check to see if it is a backquote in order to allow
-    // strings to contain escpaed double quotes.
+    // JSON parenthesis. For strings it will be a double quote. Use the last_char to store
+    // the last processed char, when check to see if it is a backslash in order to allow
+    // strings to contain escaped double quotes.
     if (value_end == -1) {
       if (value_type == STRING) {
-        if (str[ind] != '"' || last_char == '\\') {
+        if (str[ind] != '"' || (str[ind] == '"' && last_char == '\\')) {
           last_char = str[ind];
           continue;
         } else {
@@ -132,17 +165,31 @@ std::vector<SimpleJSONElement> simple_json(String str) {
           was_ending = false;
           continue;
         }
-      } else {
-        // was_ending is used to tell the next stage that the number value was terminated 
-        // using a end of element delimiter (comma or end parenthesis)
+      } else if (value_type == BOOLEAN) {
         if (str[ind] == ',' || str[ind] == '}') {
           was_ending = true;
           value_end = ind;
-          continue;
+          advance = false;
         } else if (str[ind] == ' ') {
           was_ending = false;
           value_end = ind;
+          advance = false;
+        } else {
+          advance = true;
           continue;
+        }
+      } else {
+        // was_ending is used to tell the next stage that the number value was terminated 
+        // using a end of element delimiter (comma or end parenthesis)
+        // When value_end is found, do not continue. Allow it to fall through to kvp processing
+        if (str[ind] == ',' || str[ind] == '}') {
+          was_ending = true;
+          value_end = ind;
+          advance = false;
+        } else if (str[ind] == ' ') {
+          was_ending = false;
+          value_end = ind;
+          advance = false;
         } else {
           advance = true;
           continue;
@@ -155,11 +202,18 @@ std::vector<SimpleJSONElement> simple_json(String str) {
 
       // Extract and store data in the results vector
       SimpleJSONElement kvp;
+#ifdef CPP_STANDARD
+      kvp.key = str.substr(key_start, key_end-key_start);
+      kvp.value_string = str.substr(value_start, value_end-value_start);
+#else
       kvp.key = str.substring(key_start, key_end);
-      kvp.type = value_type;
       kvp.value_string = str.substring(value_start, value_end);
+#endif
+      kvp.type = value_type;
       if (value_type == NUMBER) {
-        kvp.value_number = strtoll(kvp.value_string.c_str(), NULL, 0);
+        kvp.value_number = strtoll(trim(kvp.value_string).c_str(), NULL, 0);
+      } else if (value_type == BOOLEAN) {
+        kvp.value_boolean = to_bool(trim(kvp.value_string));
       }
       result.push_back(kvp);
 
