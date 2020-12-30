@@ -20,26 +20,30 @@ struct SimpleJSONElement {
   bool value_boolean;
 };
 
-
-std::string trim(const std::string &s)
+String trim(const String &s)
 {
-    std::string::const_iterator it = s.begin();
-    while (it != s.end() && isspace(*it))
-        it++;
-
-    std::string::const_reverse_iterator rit = s.rbegin();
-    while (rit.base() != it && isspace(*rit))
-        rit++;
-
-    return std::string(it, rit.base());
+  String newstr = "";
+	if (s.length() == 0) return newstr;
+	char *begin = (char*)s.c_str();
+	char *end = begin + s.length() - 1;
+	while (isspace(*begin) && begin < end) begin++;
+	while (isspace(*end) && end >= begin) end--;
+  for (char* i = begin; i <= end; i++)
+    newstr += *begin++;
+  return newstr;
 }
 
-bool to_bool(std::string str) {
-    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
-    std::istringstream is(str);
-    bool b;
-    is >> std::boolalpha >> b;
-    return b;
+bool to_bool(String str) {
+  String lowerStr = "";
+  char *str_c = (char*)str.c_str();
+  for (size_t i = 0; i < str.length(); i++) {
+    lowerStr += tolower(str_c[i]);
+  }
+  if (lowerStr == "true") {
+    return true;
+  } else {
+    return false;
+  }
 }
 
 std::vector<SimpleJSONElement> simple_json(String str) {
@@ -68,7 +72,7 @@ std::vector<SimpleJSONElement> simple_json(String str) {
 
   size_t ind = 0;
 
-  // Remove new line charachters to make processing easier
+  // Remove new line characters to make processing easier
   for (ind = 0; ind < str.length(); ind++) {
     if (str[ind] == '\n')
       str[ind] = ' ';
@@ -211,7 +215,7 @@ std::vector<SimpleJSONElement> simple_json(String str) {
 #endif
       kvp.type = value_type;
       if (value_type == NUMBER) {
-        kvp.value_number = strtoll(trim(kvp.value_string).c_str(), NULL, 0);
+        kvp.value_number = strtoll(kvp.value_string.c_str(), NULL, 0);
       } else if (value_type == BOOLEAN) {
         kvp.value_boolean = to_bool(trim(kvp.value_string));
       }
