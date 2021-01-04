@@ -249,7 +249,7 @@ bool Confrm::do_update() {
     }
     save_config(m_config);
 
-//    esp_ota_set_boot_partition(next);
+    esp_ota_set_boot_partition(next);
     http.end();
     hard_restart();
   }
@@ -402,6 +402,19 @@ void Confrm::hard_restart() {
   esp_task_wdt_add(NULL);
   while (true)
     ;
+}
+
+const String Confrm::get_config(String name) {
+  int httpCode = 0;
+  String request =
+    m_confrm_url + "/config/" + "?package=" + m_package_name +
+    "&node_id=" + WiFi.macAddress() + "&key=" + name;
+  String response = short_rest(request, httpCode, "GET");
+  if (httpCode == 200) {
+    std::vector<SimpleJSONElement> content = simple_json(response);
+    return get_simple_json_string(content, "value");
+  }
+  return "";
 }
 
 Confrm::Confrm(String package_name, String confrm_url, String node_description,

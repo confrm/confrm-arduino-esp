@@ -47,6 +47,14 @@ public:
          String node_platform = "", int32_t update_period = -1,
          bool reset_config = false);
 
+  /**
+   * Queries the confrm server for the given string name
+   *
+   * @param name    Config name to ask the server for
+   * @returns       Empty string if not found, or string result if found
+   */
+  const String get_config(String name);
+
 private:
   /**
    * Config file stored in non-volatile partition
