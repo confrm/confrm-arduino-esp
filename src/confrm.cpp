@@ -47,48 +47,6 @@ int hex2bin(unsigned char* bin,  unsigned int bin_len, const char* hex) {
     return 0;
 }
 
-#if 0
-int64_t get_json_int(String key, String str) {
-  int64_t retval;
-  struct json_value_s *root = json_parse(str.c_str(), str.length());
-  struct json_object_s *object = (struct json_object_s *)root->payload;
-  struct json_object_element_s *element = object->start;
-  do {
-    struct json_string_s *element_name = element->name;
-    if (0 == strcmp(element_name->string, key.c_str())) {
-      struct json_value_s *element_value = element->value;
-      struct json_number_s *number =
-          (struct json_number_s *)element_value->payload;
-      retval = atoll(number->number);
-      break;
-    }
-    element = element->next;
-  } while (element != NULL);
-  free(root);
-  return retval;
-}
-
-String get_json_val(String key, String str) {
-  String retval = "";
-  struct json_value_s *root = json_parse(str.c_str(), str.length());
-  struct json_object_s *object = (struct json_object_s *)root->payload;
-  struct json_object_element_s *element = object->start;
-  do {
-    struct json_string_s *element_name = element->name;
-    if (0 == strcmp(element_name->string, key.c_str())) {
-      struct json_value_s *element_value = element->value;
-      struct json_string_s *string =
-          (struct json_string_s *)element_value->payload;
-      retval = String(string->string);
-      break;
-    }
-    element = element->next;
-  } while (element != NULL);
-  free(root);
-  return retval;
-}
-#endif
-
 String Confrm::short_rest(String url, int &httpCode, String type,
                           String payload) {
 
@@ -179,8 +137,14 @@ bool Confrm::check_for_updates() {
   ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name,
            ver);
 
-  if (0 != strcmp(m_config.current_version, ver.c_str())) {
-    ESP_LOGI(TAG, "Different version available, update required...");
+  bool force = get_simple_json_bool(content, "force");
+
+  if (force || 0 != strcmp(m_config.current_version, ver.c_str())) {
+    if (force) {
+      ESP_LOGI(TAG, "Server is forcing an update");
+    } else {
+      ESP_LOGI(TAG, "Different version available, update required...");
+    }
     m_next_version = ver;
     m_next_blob = get_simple_json_string(content, "blob");
     hex2bin(m_next_hash, 32, get_simple_json_string(content, "hash").c_str());
@@ -285,9 +249,9 @@ bool Confrm::do_update() {
     }
     save_config(m_config);
 
-    //esp_ota_set_boot_partition(next); ?/ TODO: This disables OTA working
+//    esp_ota_set_boot_partition(next);
     http.end();
-    ESP.restart();
+    hard_restart();
   }
 
   http.end();

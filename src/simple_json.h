@@ -34,12 +34,17 @@ String trim(const String &s)
 }
 
 bool to_bool(String str) {
+#ifndef CPP_STANDARD
+  str.toLowerCase();
+  String lowerStr = str;
+#else
   String lowerStr = "";
   char *str_c = (char*)str.c_str();
   for (size_t i = 0; i < str.length(); i++) {
     lowerStr += tolower(str_c[i]);
   }
-  if (lowerStr == "true") {
+#endif
+  if (strcmp(lowerStr.c_str(), "true") == 0) {
     return true;
   } else {
     return false;
@@ -258,6 +263,17 @@ int64_t get_simple_json_number(std::vector<SimpleJSONElement> &vect,
     }
   }
   return 0; // Raise exception
+}
+
+bool get_simple_json_bool(std::vector<SimpleJSONElement> &vect,
+                                String key) {
+  for (std::vector<SimpleJSONElement>::iterator it = vect.begin();
+       it != vect.end(); ++it) {
+    if (it->key == key) {
+      return it->value_boolean;
+    }
+  }
+  return false; // Raise exception
 }
 
 #endif

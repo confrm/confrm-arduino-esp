@@ -71,5 +71,21 @@ TEST_CASE( "JSON Reading", "[simple_json]" ) {
   REQUIRE( result[10].type == NUMBER );
   REQUIRE( result[10].value_number == 42 );
 
+  std::string real_test = "{\"current_version\":\"0.5.1\",\"blob\":\"9656f840e8d94170b9d99ead29bb3d78\",\"hash\":\"4ac64de7167d6b21d1bf4370d27987e3812b556048c9641584fa3ea66a7a6e4c\",\"force\":true}";
+  std::vector<SimpleJSONElement> result2 = simple_json(real_test);
+
+  REQUIRE( result2.size() == 4 );
+
+  REQUIRE( result2[0].key == "current_version" );
+  REQUIRE( result2[0].type == STRING );
+  REQUIRE( result2[0].value_string == "0.5.1" );
+
+  REQUIRE( result2[3].key == "force" );
+  REQUIRE( result2[3].type == BOOLEAN );
+  REQUIRE( result2[3].value_string == "true" );
+  REQUIRE( result2[3].value_boolean == true );
+
+  
+  REQUIRE (get_simple_json_bool(result2, "force") == true);
 
 }
