@@ -22,6 +22,7 @@
 
 #include "esp_timer.h" // esp_timer_handle_t definition
 #include <Arduino.h>   // String type
+#include <mutex>
 
 class Confrm {
 
@@ -59,6 +60,11 @@ public:
   const String get_config(String name);
 
 private:
+  /**
+   * Class access mutex
+   */
+  std::mutex m_mutex;
+
   /**
    * Config file stored in non-volatile partition
    */

@@ -3,6 +3,8 @@
 #include <cstring>
 #include <sys/time.h>
 
+#include <mutex>
+
 #include <HTTPClient.h> // NOLINT
 #include <WiFiClient.h>
 
@@ -356,6 +358,7 @@ void Confrm::timer_stop() {
 
 void Confrm::timer_callback(void *ptr) {
   Confrm *self = reinterpret_cast<Confrm *>(ptr);
+  std::lock_guard<std::mutex> guard(self->m_mutex);
   self->timer_stop();
   self->register_node();
   if (self->check_for_updates()) {
@@ -399,6 +402,7 @@ void Confrm::hard_restart() {
 
 const String Confrm::get_config(String name) {
   int httpCode = 0;
+  std::lock_guard<std::mutex> guard(m_mutex);
   String request =
     m_confrm_url + "/config/" + "?package=" + m_package_name +
     "&node_id=" + WiFi.macAddress() + "&key=" + name;
@@ -413,6 +417,8 @@ const String Confrm::get_config(String name) {
 Confrm::Confrm(String package_name, String confrm_url, String node_description,
                String node_platform, int32_t update_period,
                const bool reset_config) {
+
+  std::lock_guard<std::mutex> guard(m_mutex);
 
   const esp_partition_t *current = esp_ota_get_running_partition();
   ESP_LOGD(TAG, "Booted to %d", current->address);
