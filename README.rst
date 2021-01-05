@@ -1,6 +1,6 @@
 
-Platform confrm library for ESP32 using Arduino
-===============================================
+confrm-arduino-esp32
+====================
 
 This library implements the API to enable use of the confrm server.
 
