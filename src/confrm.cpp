@@ -434,6 +434,10 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
     ESP_LOGE(TAG, "Failed to load config");
   }
 
+  // Register the node first, before checking for updates
+  m_reregister_period_count = m_reregister_period;
+
+  register_node();
   if (check_for_updates()) {
     do_update();
   }
@@ -448,7 +452,4 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
     esp_timer_create(&timer_config, &m_timer);
     timer_start();
   }
-
-  m_reregister_period_count = m_reregister_period;
-  register_node();
 }
