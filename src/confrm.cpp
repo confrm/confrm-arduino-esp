@@ -357,18 +357,11 @@ void Confrm::timer_stop() {
 void Confrm::timer_callback(void *ptr) {
   Confrm *self = reinterpret_cast<Confrm *>(ptr);
   self->timer_stop();
+  self->register_node();
   if (self->check_for_updates()) {
     ESP_LOGD(TAG, "Rebooting from timer_callback");
     self->hard_restart(); // The ESP32 does not like updating from the timer
                           // callback
-  }
-  if (self->m_reregister_period > 0) {
-    if (self->m_reregister_period_count > 0) {
-      self->m_reregister_period_count -= 1;
-    } else {
-      self->m_reregister_period_count = self->m_reregister_period;
-      self->register_node();
-    }
   }
   self->timer_start();
 }
@@ -435,9 +428,8 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
   }
 
   // Register the node first, before checking for updates
-  m_reregister_period_count = m_reregister_period;
-
   register_node();
+
   if (check_for_updates()) {
     do_update();
   }
