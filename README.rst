@@ -15,7 +15,7 @@ Prerequisites
 Installing the library
 ----------------------
 
-(Arduino IDE integration comming soon)
+(Arduino IDE integration coming soon)
 
 For now the library has to be added manually. There are a number of good tutorials on adding libraries manually, for example [https://www.digikey.co.uk/en/maker/blogs/2018/how-to-install-arduino-libraries].
 
