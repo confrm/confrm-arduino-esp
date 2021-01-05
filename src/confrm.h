@@ -35,16 +35,19 @@ public:
    * If the update_period is set then a callback is added to the esp32 timer
    * and the confrm server polled periodically for updates.
    *
-   * @param package_name  Name of the package registered with the confrm
-   *                      server
-   * @param url           Fully qualified URL to the root of the confrm
-   *                      server, e.g. http://192.168.0.42:8080
-   * @param update_period Period in seconds for querying the server for
-   *                      updates, minimum 2 seconds, maximum xx. Set to
-   *                      -1 to disable.
+   * @param package_name      Name of the package registered with the confrm
+   *                          server
+   * @param url               Fully qualified URL to the root of the confrm
+   *                          server, e.g. http://192.168.0.42:8080
+   * @param node_description  General description of node ("light sensor")
+   * @param node_platform     Platform of this node, i.e. esp32
+   * @param update_period     Period in seconds for querying the server for
+   *                          updates, minimum 2 seconds, maximum xx. Set to
+   *                          -1 to disable.
+   * @param reset_config      If true all config will be reset
    */
   Confrm(String package_name, String confrm_url, String node_description = "",
-         String node_platform = "", int32_t update_period = -1,
+         String node_platform = "", int32_t update_period = 60,
          bool reset_config = false);
 
   /**

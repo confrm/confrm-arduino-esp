@@ -2,7 +2,7 @@
    :maxdepth: 2
 
 .. include:: ../../README.rst
-   :end-before: ----
+   :end-before: ____
 
 Class Documentation
 ===================
@@ -10,8 +10,6 @@ Class Documentation
 .. doxygenclass:: Confrm
    :project: Confrm
    :members:
-   :protected-members:
-   :private-members:
    :undoc-members:
 
 ----
