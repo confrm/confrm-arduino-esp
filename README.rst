@@ -4,13 +4,14 @@ confrm-arduino-esp32
 
 This library implements the API to enable use of the confrm server.
 
-For more on the server see [https://confrm.io].
+For more on the server see https://github.com/confrm/confrm, for quickstart guides go to https://confrm.io.
 
 Prerequisites
 -------------
 
- 1) OTA + SPIFFS - confrm will not function if it cannot do over the air updates, and it requires some config space to store persistent information.
- 2) Some space - on the ESP32 Devkit v1 a basic confrm compatible application will take up ~70% of the 1.5 MB program space. The vast majority of this is the HTTP libraries. If your program is not using HTTP and the device is fairly full then this might not fit.
+1) OTA + SPIFFS - confrm will not function if it cannot do over the air updates, and it requires some config space to store persistent information.
+
+2) Some space - on the ESP32 Devkit v1 a basic confrm compatible application will take up ~70% of the 1.5 MB program space. The vast majority of this is the HTTP libraries. If your program is not using HTTP and the device is fairly full then this might not fit.
 
 Installing the library
 ----------------------
