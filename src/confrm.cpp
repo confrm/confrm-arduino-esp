@@ -125,7 +125,7 @@ bool Confrm::check_for_updates() {
   set_time();
 
   int httpCode = 0;
-  String request = m_confrm_url + "/check_for_update/?name=" + m_package_name +
+  String request = m_confrm_url + "/check_for_update/?package=" + m_package_name +
                    "&node_id=" + WiFi.macAddress();
   String response = short_rest(request, httpCode, "GET");
 
