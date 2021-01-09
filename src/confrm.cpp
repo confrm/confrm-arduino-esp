@@ -133,7 +133,13 @@ bool Confrm::check_for_updates() {
     return false;
   }
 
-  std::vector<SimpleJSONElement> content = simple_json(response);
+  std::vector<SimpleJSONElement> content;
+  try {
+    content = simple_json(response);
+  } catch (...) {
+    ESP_LOGI(TAG, "Error parsing json");
+    return false;
+  }
 
   String ver = get_simple_json_string(content, "current_version");
   ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name,
@@ -170,7 +176,7 @@ bool Confrm::do_update() {
 
   HTTPClient http;
   String request =
-      m_confrm_url + "/blob/?name=" + m_package_name + "&blob=" + m_next_blob;
+      m_confrm_url + "/blob/?package=" + m_package_name + "&blob=" + m_next_blob;
   http.begin(request);
   int httpCode = http.GET();
 
@@ -375,7 +381,13 @@ void Confrm::set_time() {
   int httpCode = 0;
   String response = short_rest(request, httpCode, "GET");
   if (httpCode == 200 && response != "" && response != "{}") {
-    std::vector<SimpleJSONElement> content = simple_json(response);
+    std::vector<SimpleJSONElement> content;
+    try {
+      content = simple_json(response);
+    } catch (...) {
+      ESP_LOGI(TAG, "Error parsing json");
+      return;
+    }
     int64_t epoch = get_simple_json_number(content, "time");
     struct timeval now;
     now.tv_sec = epoch;
@@ -409,7 +421,13 @@ const String Confrm::get_config(String name) {
     "&node_id=" + WiFi.macAddress() + "&key=" + name;
   String response = short_rest(request, httpCode, "GET");
   if (httpCode == 200) {
-    std::vector<SimpleJSONElement> content = simple_json(response);
+    std::vector<SimpleJSONElement> content;
+    try {
+      content = simple_json(response);
+    } catch (...) {
+      ESP_LOGI(TAG, "Error parsing json");
+      return "";
+    }
     return get_simple_json_string(content, "value");
   }
   return "";

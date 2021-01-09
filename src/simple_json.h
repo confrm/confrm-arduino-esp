@@ -90,8 +90,9 @@ std::vector<SimpleJSONElement> simple_json(String str) {
   }
 
   // No start was found
-  if (ind >= str.length() - 1)
+  if (ind >= str.length() - 1) {
     throw "Invalid JSON file";
+  }
 
   /*
    * Will look for start and end of each key value pair, processing the JSON string one
