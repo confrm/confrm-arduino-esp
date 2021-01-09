@@ -257,6 +257,7 @@ bool Confrm::do_update() {
   }
 
   http.end();
+  return false;
 }
 
 bool Confrm::init_config(const bool reset_config) {
@@ -300,13 +301,13 @@ bool Confrm::init_config(const bool reset_config) {
     ESP_LOGD(TAG, "Config version %d", version);
     switch (version) {
     case 1:
-      size_t bytes_read = file.read((uint8_t *)&m_config, sizeof(config_s));
+      file.read((uint8_t *)&m_config, sizeof(config_s));
       // Ensure null terminated strings...
       m_config.current_version[31] = '\0';
       ESP_LOGD(TAG, "confrm config is:");
       ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
       break;
-    others:
+    default:
       ESP_LOGE(TAG, "Unknown config version");
       file.close();
       return false;

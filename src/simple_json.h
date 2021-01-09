@@ -102,7 +102,7 @@ std::vector<SimpleJSONElement> simple_json(String str) {
   bool advance = true; // Used to indicate advancing over blank space
   char last_char = '\0'; // Used to keep track of previous character for escape sequence
   bool was_ending = false;
-  SimpleJSONType value_type; // Used to track the detected number type
+  SimpleJSONType value_type = STRING; // Used to track the detected number type
 
   // Iterating over the length of the string
   for (; ind < str.length(); ind++) {
