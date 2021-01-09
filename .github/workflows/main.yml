@@ -20,3 +20,21 @@ jobs:
         cd ./test
         g++ ./unit_test_simple_json.cpp -o unit_test_simple_json
         ./unit_test_simple_json
+
+  build-fat:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install platform.io
+        run: |
+          pip install platformio
+      - name: Build FAT Binaries
+        run: |
+          cd fat
+          pio run

@@ -2,3 +2,5 @@
 extras/docs/xml
 extras/docs/_build
 
+# Platformio build folder
+.pio
