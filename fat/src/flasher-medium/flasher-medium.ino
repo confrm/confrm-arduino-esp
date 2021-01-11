@@ -6,7 +6,7 @@ const char* password = WIFI_PASSWORD;
 
 Confrm *g_confrm;
 
-const uint32_t g_flash_time = 5;
+const uint32_t g_flash_time = FLASH_TIME;
 const int c_led_pin = 2;
 
 void setup() {
@@ -20,8 +20,10 @@ void setup() {
 
   pinMode(c_led_pin, OUTPUT);
 
-  // Force reset of client data
-  g_confrm = new Confrm("flasher", CONFRM_SERVER, "Flasher Reset", "esp32", 10, true);
+  char description[80];
+  sprintf(description, "Flasher - %s", DESCRIPTION_STRING);
+
+  g_confrm = new Confrm("flasher", CONFRM_SERVER, description, "esp32");
 
 }
 

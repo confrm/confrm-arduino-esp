@@ -8,7 +8,7 @@ Class Documentation
 ===================
 
 .. doxygenclass:: Confrm
-   :project: Confrm
+   :project: confrm-arduino-esp32
    :members:
    :undoc-members:
 

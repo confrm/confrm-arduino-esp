@@ -2,8 +2,8 @@
 #include <WiFi.h>
 #include <confrm.h>
 
-const char* ssid = "";
-const char* password = "";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 Confrm *g_confrm;
 
@@ -24,7 +24,10 @@ void setup() {
 
   pinMode(c_led_pin, OUTPUT);
 
-  g_confrm = new Confrm("flasher", "http://10.0.1.106:8000");
+  char description[80];
+  sprintf(description, "Flasher - %s", DESCRIPTION_STRING);
+  
+  g_confrm = new Confrm("flasher", CONFRM_SERVER, description, "esp32");
 
   xTaskCreatePinnedToCore(
     UpdateConfigFunction,
