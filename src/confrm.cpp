@@ -457,6 +457,7 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
 
   if (check_for_updates()) {
     do_update();
+    register_node();
   }
 
   m_update_period = update_period;

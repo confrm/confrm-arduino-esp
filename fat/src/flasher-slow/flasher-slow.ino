@@ -6,7 +6,7 @@ const char* password = WIFI_PASSWORD;
 
 Confrm *g_confrm;
 
-const uint32_t g_flash_time = FLASH_TIME;
+const uint32_t c_flash_time = FLASH_TIME;
 const int c_led_pin = 2;
 
 void setup() {
@@ -23,14 +23,14 @@ void setup() {
   char description[80];
   sprintf(description, "Flasher - %s", DESCRIPTION_STRING);
 
-  g_confrm = new Confrm("flasher", CONFRM_SERVER, description, "esp32");
+  g_confrm = new Confrm("flasher", CONFRM_SERVER, description, "esp32", 10);
 
 }
 
 void loop() {
 
   digitalWrite(c_led_pin, HIGH);
-  delay(g_flash_time);
+  delay(c_flash_time);
   digitalWrite(c_led_pin, LOW);
   delay(100);
 

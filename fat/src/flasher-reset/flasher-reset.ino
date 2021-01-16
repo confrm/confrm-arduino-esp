@@ -6,7 +6,7 @@ const char* password = WIFI_PASSWORD;
 
 Confrm *g_confrm;
 
-const uint32_t g_flash_time = 5;
+const uint32_t c_flash_time = 10;
 const int c_led_pin = 2;
 
 void setup() {
@@ -28,7 +28,7 @@ void setup() {
 void loop() {
 
   digitalWrite(c_led_pin, HIGH);
-  delay(g_flash_time);
+  delay(c_flash_time);
   digitalWrite(c_led_pin, LOW);
   delay(100);
 

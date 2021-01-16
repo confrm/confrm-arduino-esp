@@ -24,10 +24,7 @@ void setup() {
 
   pinMode(c_led_pin, OUTPUT);
 
-  char description[80];
-  sprintf(description, "Flasher - %s", DESCRIPTION_STRING);
-  
-  g_confrm = new Confrm("flasher", CONFRM_SERVER, description, "esp32");
+  g_confrm = new Confrm("config_getter", CONFRM_SERVER, "Config Test", "esp32", 10);
 
   xTaskCreatePinnedToCore(
     UpdateConfigFunction,
