@@ -1,4 +1,4 @@
-name: Confrm Testing
+name: Test/Build
 
 on: [push]
 
