@@ -20,9 +20,16 @@
 
 #include <unistd.h> // uintXX_t definition
 
-#include "esp_timer.h" // esp_timer_handle_t definition
 #include <Arduino.h>   // String type
+
+#if defined(ARDUINO_ARCH_ESP32)
+#include "esp_timer.h" // esp_timer_handle_t definition
 #include <mutex>
+#define CONFRM_PLATFORM "esp32"
+#elif defined(ARDUINO_ARCH_ESP8266)
+#include "Ticker.h"
+#define CONFRM_PLATFORM "esp8266"
+#endif
 
 class Confrm {
 
@@ -48,7 +55,7 @@ public:
    * @param reset_config      If true all config will be reset
    */
   Confrm(String package_name, String confrm_url, String node_description = "",
-         String node_platform = "", int32_t update_period = 60,
+         String node_platform = CONFRM_PLATFORM, int32_t update_period = 60,
          bool reset_config = false);
 
   /**
@@ -59,11 +66,28 @@ public:
    */
   const String get_config(String name);
 
+
+  /**
+   * Processes the time based updates for confrm.
+   *
+   * Is primarily used where background timers are not suitable, or where
+   * foreground tasks need to take priority over any background activity.
+   */
+  void yield(void);
+
+
 private:
   /**
    * Class access mutex
    */
+#if defined(ARDUINO_ARCH_ESP32)
   std::mutex m_mutex;
+#endif
+
+  /**
+   * Last yield time, used to trigger events at the correct time
+   */
+  uint32_t m_last_yield_time = 0;
 
   /**
    * Config file stored in non-volatile partition
@@ -121,7 +145,7 @@ private:
   /**
    * @brief The platform this node identifies as (i.e. esp32)
    */
-  String m_node_platform;
+  String m_node_platform = CONFRM_PLATFORM;
 
   /**
    * @brief Obtain result for short REST API calls
@@ -160,7 +184,7 @@ private:
    * Does the update by calling the confrm server REST API to download the
    * binary blob for this node.
    *
-   * @return Fale if update fails
+   * @return False if update fails
    */
   bool do_update(void);
 
@@ -170,9 +194,16 @@ private:
   int m_update_period;
 
   /**
+   * @brief Does the yield work
+   */
+  void yield_do(void* self);
+
+  /**
    * Handle to configured timer object, used for starting and stopping timer
    */
+#if defined(ARDUINO_ARCH_ESP32)
   esp_timer_handle_t m_timer;
+#endif
 
   /**
    * @brief Start the timer

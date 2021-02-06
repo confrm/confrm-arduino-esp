@@ -91,7 +91,11 @@ std::vector<SimpleJSONElement> simple_json(String str) {
 
   // No start was found
   if (ind >= str.length() - 1) {
+#if defined(ARDUINO_ARCH_ESP8266)
+    return result; // Exceptions disabled on ESP8266 by default
+#else
     throw "Invalid JSON file";
+#endif
   }
 
   /*

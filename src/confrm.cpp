@@ -1,7 +1,10 @@
-#include <string>
-#include <vector>
 #include <cstring>
+#include <string>
 #include <sys/time.h>
+#include <vector>
+
+// Architecture specific includes
+#if defined(ARDUINO_ARCH_ESP32)
 
 #include <mutex>
 
@@ -18,12 +21,38 @@
 #include "FS.h"
 #include "SPIFFS.h"
 
+#define CONFRM_TRY_CATCH
+
+#elif defined(ARDUINO_ARCH_ESP8266)
+
+#include <ESP8266HTTPClient.h>
+#include <ESP8266httpUpdate.h>
+
+#if not defined(CONFRM_ESP8266_FS)
+#define CONFRM_ESP8266_FS LittleFS
+#endif
+
+#if CONFRM_ESP8266_FS == LittleFS
+#include <LittleFS.h>
+#else
+#include "SPIFFS.h"
+#endif
+
+#define ESP_LOGE(tag, fmt, ...) ESP_LOGN("ERROR", tag, fmt, ##__VA_ARGS__)
+#define ESP_LOGD(tag, fmt, ...) ESP_LOGN("DEBUG", tag, fmt, ##__VA_ARGS__)
+#define ESP_LOGI(tag, fmt, ...) ESP_LOGN("INFO", tag, fmt, ##__VA_ARGS__)
+#define ESP_LOGN(L, tag, fmt, ...)                                             \
+  do {                                                                         \
+    String my_fmt = "[" + String(tag) + "] - " + L + " " + fmt + "\n";         \
+    Serial.printf(my_fmt.c_str(), ##__VA_ARGS__);                              \
+  } while (0)
+
+static const char *TAG = "confrm";
+
+#endif
+
 #include "confrm.h"
 #include "simple_json.h"
-
-// Storage includes for persistent data
-#include "FS.h"
-#include "SPIFFS.h"
 
 #define SHORT_REST_RESPONSE_LENGTH 256
 
@@ -34,19 +63,21 @@ String simple_url_encode(String input) {
 
 // https://stackoverflow.com/a/62612409
 static char h2b(char c) {
-    return '0'<=c && c<='9' ? c - '0'      :
-           'A'<=c && c<='F' ? c - 'A' + 10 :
-           'a'<=c && c<='f' ? c - 'a' + 10 :
-           /* else */         -1;
+  return '0' <= c && c <= '9'   ? c - '0'
+         : 'A' <= c && c <= 'F' ? c - 'A' + 10
+         : 'a' <= c && c <= 'f' ? c - 'a' + 10
+                                :
+                                /* else */ -1;
 }
 
-int hex2bin(unsigned char* bin,  unsigned int bin_len, const char* hex) {
-    for(unsigned int i=0; i<bin_len; i++) {
-        char b[2] = {h2b(hex[2*i+0]), h2b(hex[2*i+1])};
-        if(b[0]<0 || b[1]<0) return -1;
-        bin[i] = b[0]*16 + b[1];
-    }
-    return 0;
+int hex2bin(unsigned char *bin, unsigned int bin_len, const char *hex) {
+  for (unsigned int i = 0; i < bin_len; i++) {
+    char b[2] = {h2b(hex[2 * i + 0]), h2b(hex[2 * i + 1])};
+    if (b[0] < 0 || b[1] < 0)
+      return -1;
+    bin[i] = b[0] * 16 + b[1];
+  }
+  return 0;
 }
 
 String Confrm::short_rest(String url, int &httpCode, String type,
@@ -57,6 +88,7 @@ String Confrm::short_rest(String url, int &httpCode, String type,
     return "";
   }
 
+#if defined(ARDUINO_ARCH_ESP32)
   HTTPClient http;
   http.begin(url);
 
@@ -118,6 +150,42 @@ String Confrm::short_rest(String url, int &httpCode, String type,
 
   http.end();
   return "";
+#elif defined(ARDUINO_ARCH_ESP8266)
+
+  WiFiClient client;
+  HTTPClient http;
+
+  if (http.begin(client, url)) {
+
+    if (type == "GET") {
+      httpCode = http.GET();
+    } else if (type == "PUT") {
+      httpCode = http.PUT(payload);
+    } else if (type == "POST") {
+      httpCode = http.POST(payload);
+    } else {
+      ESP_LOGE(TAG, "Unsupported call type");
+      httpCode = -1;
+      http.end();
+      return "";
+    }
+
+    if (httpCode < 0) {
+      ESP_LOGI(TAG, "Unable to connect to confrm server");
+      http.end();
+      return "";
+    }
+
+    String response = http.getString();
+    http.end();
+
+    return response;
+
+  } else {
+    ESP_LOGI(TAG, "Unable to connect to confrm server");
+    return "";
+  }
+#endif
 }
 
 bool Confrm::check_for_updates() {
@@ -125,7 +193,8 @@ bool Confrm::check_for_updates() {
   set_time();
 
   int httpCode = 0;
-  String request = m_confrm_url + "/check_for_update/?package=" + m_package_name +
+  String request = m_confrm_url +
+                   "/check_for_update/?package=" + m_package_name +
                    "&node_id=" + WiFi.macAddress();
   String response = short_rest(request, httpCode, "GET");
 
@@ -134,16 +203,25 @@ bool Confrm::check_for_updates() {
   }
 
   std::vector<SimpleJSONElement> content;
+#if defined(CONFRM_TRY_CATCH)
   try {
     content = simple_json(response);
   } catch (...) {
     ESP_LOGI(TAG, "Error parsing json");
     return false;
   }
+#else
+  content = simple_json(response);
+  if (content.size() == 0) {
+    ESP_LOGI(TAG, "No JSON data was extracted, there may have been and error "
+                  "processing the response");
+    return false;
+  }
+#endif
 
   String ver = get_simple_json_string(content, "current_version");
-  ESP_LOGI(TAG, "Current version of %s on confrm server is: %s", m_package_name,
-           ver);
+  ESP_LOGI(TAG, "Current version of %s on confrm server is: %s",
+           m_package_name.c_str(), ver.c_str());
 
   bool force = get_simple_json_bool(content, "force");
 
@@ -162,6 +240,7 @@ bool Confrm::check_for_updates() {
   return false;
 }
 
+#if defined(ARDUINO_ARCH_ESP32)
 bool Confrm::do_update() {
 
   // If not configured this cannot work
@@ -175,8 +254,8 @@ bool Confrm::do_update() {
   }
 
   HTTPClient http;
-  String request =
-      m_confrm_url + "/blob/?package=" + m_package_name + "&blob=" + m_next_blob;
+  String request = m_confrm_url + "/blob/?package=" + m_package_name +
+                   "&blob=" + m_next_blob;
   http.begin(request);
   int httpCode = http.GET();
 
@@ -265,14 +344,72 @@ bool Confrm::do_update() {
   http.end();
   return false;
 }
+#elif defined(ARDUINO_ARCH_ESP8266)
+
+bool Confrm::do_update() {
+
+  // If not configured this cannot work
+  if (!m_config_status) {
+    return false;
+  }
+
+  // Likewise, sanity check the update settings
+  if (m_next_version == "" or m_next_blob == "") {
+    return false;
+  }
+
+  String request = m_confrm_url + "/blob/?package=" + m_package_name +
+                   "&blob=" + m_next_blob;
+
+  WiFiClient client;
+  ESPhttpUpdate.rebootOnUpdate(false);
+  t_httpUpdate_return ret = ESPhttpUpdate.update(client, request);
+
+  switch (ret) {
+  case HTTP_UPDATE_FAILED:
+    ESP_LOGE(TAG, "HTTP_UPDATE_FAILED Error (%d): %s\n",
+             ESPhttpUpdate.getLastError(),
+             ESPhttpUpdate.getLastErrorString().c_str());
+    break;
+
+  case HTTP_UPDATE_NO_UPDATES:
+    ESP_LOGE(TAG, "HTTP_UPDATE_NO_UPDATES");
+    break;
+
+  case HTTP_UPDATE_OK:
+    ESP_LOGE(TAG, "HTTP_UPDATE_OK");
+
+    for (int i = 0; i < sizeof(m_config.current_version); i++) {
+      if (i < m_next_version.length()) {
+        m_config.current_version[i] = m_next_version.c_str()[i];
+      } else {
+        m_config.current_version[i] = '\0';
+      }
+    }
+    save_config(m_config);
+
+    hard_restart();
+
+    break;
+  }
+}
+
+#endif
 
 bool Confrm::init_config(const bool reset_config) {
 
   // Attempt to start FS, if it does not start then try formatting it
+#if defined(ARDUINO_ARCH_ESP32)
   if (!SPIFFS.begin(true)) {
     ESP_LOGD(TAG, "Failed to init SPIFFS, confrm will not work");
     return false;
   }
+#elif defined(ARDUINO_ARCH_ESP8266)
+  if (!CONFRM_ESP8266_FS.begin()) {
+    ESP_LOGE(TAG, "Error mounting file system, confrm will not work");
+    return false;
+  }
+#endif
 
   if (reset_config) {
     ESP_LOGD(TAG, "Resetting config");
@@ -283,14 +420,22 @@ bool Confrm::init_config(const bool reset_config) {
 
   ESP_LOGD(TAG, "Getting confrm config");
 
+#if defined(ARDUINO_ARCH_ESP32)
   File file = SPIFFS.open(m_config_file.c_str());
+#elif defined(ARDUINO_ARCH_ESP8266)
+  File file = CONFRM_ESP8266_FS.open(m_config_file.c_str(), "r");
+#endif
 
   if (!file || file.isDirectory()) {
     ESP_LOGD(TAG, "Failed to open file for reading, creating default config");
     config_s config;
     memset(config.current_version, 0, 32);
     if (save_config(config)) {
+#if defined(ARDUINO_ARCH_ESP32)
       file = SPIFFS.open(m_config_file.c_str());
+#elif defined(ARDUINO_ARCH_ESP8266)
+      file = CONFRM_ESP8266_FS.open(m_config_file.c_str(), "r");
+#endif
       if (!file) {
         ESP_LOGD(TAG, "Error created new config_file, but unable to open, "
                       "confrm will not work");
@@ -335,7 +480,11 @@ bool Confrm::init_config(const bool reset_config) {
 
 bool Confrm::save_config(config_s config) {
 
-  File file = SPIFFS.open(m_config_file.c_str(), FILE_WRITE);
+#if defined(ARDUINO_ARCH_ESP32)
+  File file = SPIFFS.open(m_config_file.c_str());
+#elif defined(ARDUINO_ARCH_ESP8266)
+  File file = CONFRM_ESP8266_FS.open(m_config_file.c_str(), "w");
+#endif
   if (!file) {
     ESP_LOGD(TAG, "Unable to create file");
     return false;
@@ -353,27 +502,54 @@ bool Confrm::save_config(config_s config) {
 
 void Confrm::timer_start() {
   if (m_update_period > 2) {
+#if defined(ARDUINO_ARCH_ESP32)
     esp_timer_start_periodic(m_timer, m_update_period * 1000 * 1000ULL);
+#elif defined(ARDUINO_ARCH_ESP8266)
+    ESP_LOGI(TAG, "Timer not supported for esp8266, please use yield");
+#endif
   }
 }
 
 void Confrm::timer_stop() {
   if (m_update_period > 2) {
+#if defined(ARDUINO_ARCH_ESP32)
     esp_timer_stop(m_timer);
+#elif defined(ARDUINO_ARCH_ESP8266)
+    ESP_LOGI(TAG, "Timer not supported for esp8266, please use yield");
+#endif
   }
 }
 
 void Confrm::timer_callback(void *ptr) {
   Confrm *self = reinterpret_cast<Confrm *>(ptr);
+  self->yield_do(ptr);
+}
+
+void Confrm::yield() {
+  uint32_t current_time = millis() / 1000;
+  if (m_last_yield_time > current_time) {
+    m_last_yield_time = current_time;
+  } else if (current_time - m_last_yield_time >= m_update_period) {
+    yield_do(reinterpret_cast<void *>(this));
+    m_last_yield_time = current_time;
+  }
+}
+
+void Confrm::yield_do(void *ptr) {
+  Confrm *self = reinterpret_cast<Confrm *>(ptr);
+#if defined(ARDUINO_ARCH_ESP32)
   std::lock_guard<std::mutex> guard(self->m_mutex);
   self->timer_stop();
+#endif
   self->register_node();
   if (self->check_for_updates()) {
     ESP_LOGD(TAG, "Rebooting from timer_callback");
     self->hard_restart(); // The ESP32 does not like updating from the timer
                           // callback
   }
+#if defined(ARDUINO_ARCH_ESP32)
   self->timer_start();
+#endif
 }
 
 void Confrm::set_time() {
@@ -382,12 +558,21 @@ void Confrm::set_time() {
   String response = short_rest(request, httpCode, "GET");
   if (httpCode == 200 && response != "" && response != "{}") {
     std::vector<SimpleJSONElement> content;
+#if defined(CONFRM_TRY_CATCH)
     try {
       content = simple_json(response);
     } catch (...) {
       ESP_LOGI(TAG, "Error parsing json");
       return;
     }
+#else
+    content = simple_json(response);
+    if (content.size() == 0) {
+      ESP_LOGI(
+          TAG,
+          "There may have been an error parsing the JSON, or it was empty");
+    }
+#endif
     int64_t epoch = get_simple_json_number(content, "time");
     struct timeval now;
     now.tv_sec = epoch;
@@ -405,29 +590,44 @@ void Confrm::register_node() {
 }
 
 void Confrm::hard_restart() {
+#if defined(ARDUINO_ARCH_ESP32)
   // Bit hacky, use watchdog timer to force a restart. The ESP_restart()
   // method does not reboot everything and was leading to instability
   esp_task_wdt_init(1, true);
   esp_task_wdt_add(NULL);
+#elif defined(ARDUINO_ARCH_ESP8266)
+  system_restart();
+#endif
   while (true)
     ;
 }
 
 const String Confrm::get_config(String name) {
   int httpCode = 0;
+#if defined(ARDUINO_ARCH_ESP32)
   std::lock_guard<std::mutex> guard(m_mutex);
-  String request =
-    m_confrm_url + "/config/" + "?package=" + m_package_name +
-    "&node_id=" + WiFi.macAddress() + "&key=" + name;
+#endif
+  String request = m_confrm_url + "/config/" + "?package=" + m_package_name +
+                   "&node_id=" + WiFi.macAddress() + "&key=" + name;
   String response = short_rest(request, httpCode, "GET");
   if (httpCode == 200) {
     std::vector<SimpleJSONElement> content;
+#if defined(CONFRM_TRY_CATCH)
     try {
       content = simple_json(response);
     } catch (...) {
       ESP_LOGI(TAG, "Error parsing json");
       return "";
     }
+#else
+    content = simple_json(response);
+    if (content.size() == 0) {
+      ESP_LOGI(
+          TAG,
+          "There may have been an error parsing the JSON, or it was empty");
+      return "";
+    }
+#endif
     return get_simple_json_string(content, "value");
   }
   return "";
@@ -437,10 +637,11 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
                String node_platform, int32_t update_period,
                const bool reset_config) {
 
+#if defined(ARDUINO_ARCH_ESP32)
   std::lock_guard<std::mutex> guard(m_mutex);
-
   const esp_partition_t *current = esp_ota_get_running_partition();
   ESP_LOGD(TAG, "Booted to %d", current->address);
+#endif
 
   m_package_name = package_name;
   m_confrm_url = confrm_url;
@@ -462,6 +663,7 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
 
   m_update_period = update_period;
   if (m_update_period > 2) {
+#if defined(ARDUINO_ARCH_ESP32)
     esp_timer_create_args_t timer_config;
     timer_config.arg = reinterpret_cast<void *>(this);
     timer_config.callback = Confrm::timer_callback;
@@ -469,5 +671,6 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
     timer_config.name = "Confrm update timer";
     esp_timer_create(&timer_config, &m_timer);
     timer_start();
+#endif
   }
 }
