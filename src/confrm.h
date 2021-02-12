@@ -20,7 +20,7 @@
 
 #include <unistd.h> // uintXX_t definition
 
-#include <Arduino.h>   // String type
+#include <Arduino.h> // String type
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include "esp_timer.h" // esp_timer_handle_t definition
@@ -56,7 +56,56 @@ public:
    */
   Confrm(String package_name, String confrm_url, String node_description = "",
          String node_platform = CONFRM_PLATFORM, int32_t update_period = 60,
-         bool reset_config = false);
+         bool reset_configuration = false);
+
+  /**
+   * @brief Main confrm class with config overrides
+   *
+   * Constructor will use callbacks to check retrieve settings from persistent
+   * storage, then check for updates and do an update if required.
+   *
+   * The persistent storage is configured by the user, and set as a save and
+   * load method using function pointers.
+   *
+   * The user callback is required to understand the header structure of the
+   * data being loaded, which is a version byte followed by a length byte
+   * followed by a data field. The length byte indicates the length of the data
+   * field. So a data field containing 0xAA, 0xBB using version 3 would be
+   * encoded:
+   *
+   *   0x03, 0x02, 0xAA, 0xBB
+   *
+   * Confrm will handle conversion between version numbers where possible.
+   *
+   * If the update_period is set then a callback is added to the esp32 timer
+   * and the confrm server polled periodically for updates.
+   *
+   * @param package_name      Name of the package registered with the confrm
+   *                          server
+   * @param url               Fully qualified URL to the root of the confrm
+   *                          server, e.g. http://192.168.0.42:8080
+   * @param load_config       Callback for loading the persistent
+   *                          configuration, takes a pointer to a pointer for
+   *                          the data, and returns a size_t of the bytes read.
+   *                          The calling process will call 'delete' on the
+   *                          pointer once the data has been used.
+   * @param save_config       Callback for saving the persistent configuration,
+   *                          takes a pointer a uint8_t array of to the data
+   *                          to be stored and the length as a size_t. Returns
+   *                          a boolean if successful.
+   * @param node_description  General description of node ("light sensor")
+   * @param node_platform     Platform of this node, i.e. esp32
+   * @param update_period     Period in seconds for querying the server for
+   *                          updates, minimum 2 seconds, maximum xx. Set to
+   *                          -1 to disable.
+   * @param reset_config      If true all config will be reset
+   */
+  Confrm(String package_name, String confrm_url,
+         size_t (*load_config)(uint8_t **), 
+         bool (*save_config)(uint8_t *, size_t),
+         String node_description = "",
+         String node_platform = CONFRM_PLATFORM, int32_t update_period = 60,
+         bool reset_configuration = false);
 
   /**
    * Queries the confrm server for the given string name
@@ -66,7 +115,6 @@ public:
    */
   const String get_config(String name);
 
-
   /**
    * Processes the time based updates for confrm.
    *
@@ -75,6 +123,27 @@ public:
    */
   void yield(void);
 
+  /**
+   * Configuration struct, data is read from the non-volatile partition in
+   * to this format.
+   */
+  struct config_s {
+    char current_version[32];
+  };
+
+  /**
+   * Currently supported configuration version, stored along with config.
+   * If config version changes, the class should include the ability to
+   * update the config to the newer version from any older version.
+   *
+   * Version 1:
+   *
+   *  uint8_t config_version
+   *  uint8_t sizeof(config_s)
+   *  uint8_t * sizeof(config_s)
+   *
+   */
+  const uint8_t m_config_version = 1;
 
 private:
   /**
@@ -95,21 +164,17 @@ private:
   const String m_config_file = "/confrm.config";
 
   /**
-   * Currently supported configuration version, stored along with config.
-   * If config version changes, the class should include the ability to
-   * update the config to the newer version from any older version.
+   * Instance of config struct for storing current config
    */
-  const uint8_t m_config_version = 1;
-
-  /**
-   * Configuration struct, data is read from the non-volatile partition in
-   * to this format.
-   */
-  struct config_s {
-    char current_version[32];
-  };
   config_s m_config;
   bool m_config_status = false;
+
+  /**
+   * Enables the file storage to be overridden
+   */
+  bool m_config_storage_override = false;
+  bool (*m_config_storage_save)(uint8_t *, size_t);
+  size_t (*m_config_storage_load)(uint8_t **);
 
   /**
    * @brief Called to load in config, if it exists.
@@ -126,6 +191,13 @@ private:
    * @return True of config saved correctly
    */
   bool save_config(config_s config);
+
+
+  /**
+   * @brief Resets the configuration to an empty instance of the current 
+   * version
+   */
+  bool reset_config(void);
 
   /**
    * @brief Package name is the unique key for each node type
@@ -196,7 +268,7 @@ private:
   /**
    * @brief Does the yield work
    */
-  void yield_do(void* self);
+  void yield_do(void *self);
 
   /**
    * Handle to configured timer object, used for starting and stopping timer

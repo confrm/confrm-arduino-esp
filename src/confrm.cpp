@@ -1,6 +1,5 @@
-#include <cstring>
-#include <string>
-#include <sys/time.h>
+//#include <string>
+//#include <sys/time.h>
 #include <vector>
 
 // Architecture specific includes
@@ -224,6 +223,7 @@ bool Confrm::check_for_updates() {
            m_package_name.c_str(), ver.c_str());
 
   bool force = get_simple_json_bool(content, "force");
+  bool reboot = get_simple_json_bool(conent, "reboot");
 
   if (force || 0 != strcmp(m_config.current_version, ver.c_str())) {
     if (force) {
@@ -235,6 +235,8 @@ bool Confrm::check_for_updates() {
     m_next_blob = get_simple_json_string(content, "blob");
     hex2bin(m_next_hash, 32, get_simple_json_string(content, "hash").c_str());
     return true;
+  } else if (reboot) {
+    hard_restart();
   }
 
   return false;
@@ -345,7 +347,14 @@ bool Confrm::do_update() {
   return false;
 }
 #elif defined(ARDUINO_ARCH_ESP8266)
-
+/*
+ * ESP8266 specific update routine, use the HTTP update class,
+ * would be good to use the same as ESP32 but the API is considerably
+ * more complex.
+ *
+ * This version makes use of a 'simpler' CRC for error checking, whereas
+ * the ESP32 uses a SHA256.
+ */
 bool Confrm::do_update() {
 
   // If not configured this cannot work
@@ -362,6 +371,8 @@ bool Confrm::do_update() {
                    "&blob=" + m_next_blob;
 
   WiFiClient client;
+  // Disable reboot as we need to update the persistent settings
+  // if the update is successful before rebooting
   ESPhttpUpdate.rebootOnUpdate(false);
   t_httpUpdate_return ret = ESPhttpUpdate.update(client, request);
 
@@ -370,14 +381,16 @@ bool Confrm::do_update() {
     ESP_LOGE(TAG, "HTTP_UPDATE_FAILED Error (%d): %s\n",
              ESPhttpUpdate.getLastError(),
              ESPhttpUpdate.getLastErrorString().c_str());
+    return false;
     break;
 
   case HTTP_UPDATE_NO_UPDATES:
-    ESP_LOGE(TAG, "HTTP_UPDATE_NO_UPDATES");
+    ESP_LOGE(TAG, "HTTP Update Failed");
+    return false;
     break;
 
   case HTTP_UPDATE_OK:
-    ESP_LOGE(TAG, "HTTP_UPDATE_OK");
+    ESP_LOGE(TAG, "HTTP Update Complete - Storing Updated Settings");
 
     for (int i = 0; i < sizeof(m_config.current_version); i++) {
       if (i < m_next_version.length()) {
@@ -390,13 +403,96 @@ bool Confrm::do_update() {
 
     hard_restart();
 
+    return true;
     break;
   }
+  return false;
 }
 
 #endif
 
-bool Confrm::init_config(const bool reset_config) {
+bool Confrm::init_config(bool reset) {
+
+  if (m_config_storage_override) {
+
+    /*
+     * If config override is set, attempt to read the config.
+     *
+     * Errors may happen if version is not correct, size is incorrect or
+     * the set callbacks cant read the information for any reason.
+     *
+     * On error it will try and reset the config to blank as that is
+     * realistically the only thing we can do and it is fairly simple
+     * to recover from that state.
+     */
+
+    if (reset) {
+      ESP_LOGD(TAG, "Resetting config");
+      return reset_config();
+    }
+
+    uint8_t *config_ptr = NULL;
+    size_t bytes_read = m_config_storage_load(&config_ptr);
+    bool result;
+
+    if (bytes_read > 2) {
+      uint8_t version = config_ptr[0];
+      switch (version) {
+      case 1:
+        if (config_ptr[1] != sizeof(config_s)) {
+          ESP_LOGE(TAG, "Size of config record does not match size of config "
+                        "structure, unable to init config. Reinitialising");
+          result = reset_config();
+          if (result == false) {
+            ESP_LOGE(TAG, "Error resetting config, unable to start confrm");
+            delete [] config_ptr;
+            return false;
+          }
+        } else {
+          memcpy(reinterpret_cast<void *>(&m_config),
+                 reinterpret_cast<void *>(config_ptr + 2), sizeof(m_config));
+          m_config.current_version[31] = '\0';
+          ESP_LOGD(TAG, "confrm config is:");
+          ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
+        }
+        break;
+      default:
+        ESP_LOGE(TAG, "Unknown config version, resetting config.");
+        result = reset_config();
+        if (result == false) {
+          ESP_LOGE(TAG, "Error resetting config, unable to start confrm");
+          delete [] config_ptr;
+          return false;
+        }
+      }
+      delete [] config_ptr;
+      return true;
+    }
+
+    /*
+     * Code gets here if there was insufficient bytes returned form the load
+     * callback - tidy up by releasing allocated RAM and attempting to reset
+     * the config.
+     */
+
+    if (config_ptr != NULL) {
+      delete [] config_ptr;
+    }
+
+    result = reset_config();
+
+    if (result == false) {
+      ESP_LOGE(TAG, "Error resetting config, unable to start confrm");
+      return false;
+    }
+
+    return true;
+  }
+
+  /*
+   * Code below this point is 'normal' flow, whereby the esp API is used to
+   * open a file and store the settings.
+   */
 
   // Attempt to start FS, if it does not start then try formatting it
 #if defined(ARDUINO_ARCH_ESP32)
@@ -411,11 +507,9 @@ bool Confrm::init_config(const bool reset_config) {
   }
 #endif
 
-  if (reset_config) {
+  if (reset) {
     ESP_LOGD(TAG, "Resetting config");
-    config_s config;
-    memset(config.current_version, 0, 32);
-    save_config(config);
+    reset_config();
   }
 
   ESP_LOGD(TAG, "Getting confrm config");
@@ -449,15 +543,30 @@ bool Confrm::init_config(const bool reset_config) {
 
   if (file.available()) {
     uint8_t version = file.read();
+    bool result;
     ESP_LOGD(TAG, "Config version %d", version);
     switch (version) {
     case 1:
-      file.read((uint8_t *)&m_config, sizeof(config_s));
-      // Ensure null terminated strings...
-      m_config.current_version[31] = '\0';
-      ESP_LOGD(TAG, "confrm config is:");
-      ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
+      uint8_t length;
+      file.read(&length, 1);
+      if (length != sizeof(config_s)) {
+        ESP_LOGE(TAG, "Size of config record (%d) does not match size of "
+                      "config structure (%d), unable to init config. "
+                      "Reinitialising", length, sizeof(config_s));
+        file.close();
+        result = reset_config();
+        if (result == false) {
+          ESP_LOGE(TAG, "Error resetting config, unable to start confrm");
+          return false;
+        }
+      } else {
+        file.read((uint8_t *)&m_config, sizeof(config_s));
+        m_config.current_version[31] = '\0';
+        ESP_LOGD(TAG, "confrm config is:");
+        ESP_LOGD(TAG, "\tcurrent_version: \"%s\"", m_config.current_version);
+      }
       break;
+
     default:
       ESP_LOGE(TAG, "Unknown config version");
       file.close();
@@ -467,18 +576,40 @@ bool Confrm::init_config(const bool reset_config) {
   } else {
     ESP_LOGD(TAG, "Config file was empty, populating with empty config");
     file.close();
-    memset(m_config.current_version, 0, 32);
-    if (!save_config(m_config)) {
-      ESP_LOGD(TAG, "Error created new config_file, confrm will not work");
-      return false;
-    }
+    return reset_config();
   }
 
   ESP_LOGD(TAG, "Config loaded");
   return true;
 }
 
+bool Confrm::reset_config() {
+  config_s config;
+  memset(config.current_version, 0, 32);
+  return save_config(config);
+}
+
 bool Confrm::save_config(config_s config) {
+
+  // To ensure string is correctly terminated
+  config.current_version[31] = '\0';
+  
+  // Check for storage overflow before assigning memory - should be an assert but not supported
+  size_t config_len = sizeof(m_config);
+  if (config_len > 0xFF) {
+    ESP_LOGE(TAG, "Config struct is larger than 0xFF bytes long");
+    return false;
+  }
+
+  if (m_config_storage_override) {
+    // Version 1 (type, len, data)
+    uint8_t *save_data = new uint8_t[sizeof(m_config) + 2];
+    save_data[0] = 0x01; // Version #
+    save_data[1] = (uint8_t)config_len;
+    memcpy(reinterpret_cast<void *>(save_data + 2), reinterpret_cast<void*>(&m_config), sizeof(m_config));
+    bool result = m_config_storage_save(save_data, sizeof(save_data));
+    delete [] save_data;
+  }
 
 #if defined(ARDUINO_ARCH_ESP32)
   File file = SPIFFS.open(m_config_file.c_str());
@@ -490,9 +621,8 @@ bool Confrm::save_config(config_s config) {
     return false;
   }
 
-  config.current_version[31] = '\0';
-
   file.write(m_config_version);
+  file.write((uint8_t)config_len);
   file.write((uint8_t *)config.current_version, 32);
 
   file.close();
@@ -635,7 +765,7 @@ const String Confrm::get_config(String name) {
 
 Confrm::Confrm(String package_name, String confrm_url, String node_description,
                String node_platform, int32_t update_period,
-               const bool reset_config) {
+               const bool reset_configuration) {
 
 #if defined(ARDUINO_ARCH_ESP32)
   std::lock_guard<std::mutex> guard(m_mutex);
@@ -648,7 +778,7 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
   m_node_description = simple_url_encode(node_description);
   m_node_platform = node_platform;
 
-  m_config_status = init_config(reset_config);
+  m_config_status = init_config(reset_configuration);
   if (!m_config_status) {
     ESP_LOGE(TAG, "Failed to load config");
   }
@@ -673,4 +803,18 @@ Confrm::Confrm(String package_name, String confrm_url, String node_description,
     timer_start();
 #endif
   }
+}
+
+Confrm::Confrm(String package_name, String confrm_url,
+               size_t (*load_config)(uint8_t **),
+               bool (*save_config)(uint8_t *, size_t), String node_description,
+               String node_platform, int32_t update_period,
+               const bool reset_config) {
+
+  m_config_storage_override = true;
+  m_config_storage_load = load_config;
+  m_config_storage_save = save_config;
+
+  Confrm(package_name, confrm_url, node_description, node_platform,
+         update_period, reset_config);
 }
