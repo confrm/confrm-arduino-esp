@@ -1,8 +1,8 @@
 
-confrm-arduino-esp32
-====================
+confrm-arduino-esp
+==================
 
-.. image:: https://github.com/confrm/confrm-arduino-esp32/workflows/Test/Build/badge.svg
+.. image:: https://github.com/confrm/confrm-arduino-esp/workflows/Test/Build/badge.svg
 
 This library implements the API to enable use of the confrm server.
 
