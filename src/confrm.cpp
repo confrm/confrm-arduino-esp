@@ -223,7 +223,7 @@ bool Confrm::check_for_updates() {
            m_package_name.c_str(), ver.c_str());
 
   bool force = get_simple_json_bool(content, "force");
-  bool reboot = get_simple_json_bool(conent, "reboot");
+  bool reboot = get_simple_json_bool(content, "reboot");
 
   if (force || 0 != strcmp(m_config.current_version, ver.c_str())) {
     if (force) {
