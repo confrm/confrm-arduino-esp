@@ -314,6 +314,7 @@ bool Confrm::do_update() {
     }
 
     esp_ota_end(ota_handle);
+    esp_task_wdt_reset(); // Ensure WDT does not trigger for a bit longer
 
     mbedtls_sha256_finish(&ctx2, hash);
     mbedtls_sha256_free(&ctx2);
@@ -543,12 +544,12 @@ bool Confrm::init_config(bool reset) {
 
   if (file.available()) {
     uint8_t version = file.read();
+    uint8_t length;
     bool result;
     ESP_LOGD(TAG, "Config version %d", version);
     switch (version) {
     case 1:
-      uint8_t length;
-      file.read(&length, 1);
+      length = file.read();
       if (length != sizeof(config_s)) {
         ESP_LOGE(TAG, "Size of config record (%d) does not match size of "
                       "config structure (%d), unable to init config. "
@@ -593,9 +594,11 @@ bool Confrm::save_config(config_s config) {
 
   // To ensure string is correctly terminated
   config.current_version[31] = '\0';
-  
+ 
+  ESP_LOGI(TAG, "Saving Config: \n\tversion: %s", config.current_version);
+
   // Check for storage overflow before assigning memory - should be an assert but not supported
-  size_t config_len = sizeof(m_config);
+  size_t config_len = sizeof(config);
   if (config_len > 0xFF) {
     ESP_LOGE(TAG, "Config struct is larger than 0xFF bytes long");
     return false;
@@ -603,16 +606,16 @@ bool Confrm::save_config(config_s config) {
 
   if (m_config_storage_override) {
     // Version 1 (type, len, data)
-    uint8_t *save_data = new uint8_t[sizeof(m_config) + 2];
+    uint8_t *save_data = new uint8_t[sizeof(config) + 2];
     save_data[0] = 0x01; // Version #
     save_data[1] = (uint8_t)config_len;
-    memcpy(reinterpret_cast<void *>(save_data + 2), reinterpret_cast<void*>(&m_config), sizeof(m_config));
+    memcpy(reinterpret_cast<void *>(save_data + 2), reinterpret_cast<void*>(&config), sizeof(config));
     bool result = m_config_storage_save(save_data, sizeof(save_data));
     delete [] save_data;
   }
 
 #if defined(ARDUINO_ARCH_ESP32)
-  File file = SPIFFS.open(m_config_file.c_str());
+  File file = SPIFFS.open(m_config_file.c_str(), FILE_WRITE);
 #elif defined(ARDUINO_ARCH_ESP8266)
   File file = CONFRM_ESP8266_FS.open(m_config_file.c_str(), "w");
 #endif
